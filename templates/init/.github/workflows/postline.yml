@@ -1,0 +1,51 @@
+name: postline
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+  pull_request:
+
+# One publish run at a time, so two runs can never send the same post.
+concurrency:
+  group: postline-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx --yes postline@0 lint
+
+  publish:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx --yes playwright-core install --with-deps chromium
+      - name: publish due posts
+        run: npx --yes postline@0 publish
+        env:
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          BLUESKY_IDENTIFIER: ${{ secrets.BLUESKY_IDENTIFIER }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          POSTLINE_WEBHOOK_SECRET: ${{ secrets.POSTLINE_WEBHOOK_SECRET }}
+      - name: commit ledger
+        if: always()
+        run: |
+          git config user.name "postline"
+          git config user.email "postline@users.noreply.github.com"
+          git add .postline
+          git diff --cached --quiet || (git commit -m "postline: update ledger" && git push)

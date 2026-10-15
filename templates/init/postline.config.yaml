@@ -1,0 +1,37 @@
+# postline config. Full reference: https://github.com/1cbyc/postline/blob/main/docs/guides/configuration.md
+brand:
+  name: Your Company
+  url: example.com
+  logo: assets/logo.svg      # SVG (inlined) or PNG. White marks suit dark themes.
+  font:
+    family: Inter
+    url: https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=block
+  colors:
+    background: "#0f1115"
+    panel: "#161a21"
+    border: "#2a303b"
+    text: "#eef1f5"
+    muted: "#98a1ae"
+    accent: "#7cc4ff"
+
+timezone: America/New_York
+
+schedule:
+  weekStartsOn: mon
+  days: [mon, tue, wed, thu, fri]
+  times: ["09:00", "15:00"]
+
+card:
+  size: square               # square | landscape | portrait
+  format: png                # png | jpeg (jpeg keeps Bluesky under 1 MB)
+
+channels:
+  linkedin:
+    type: linkedin
+    organization: "123456"   # the number in linkedin.com/company/<id>/admin
+
+rules:
+  maxHashtags: 3
+  allowEmoji: true
+  allowedLinkDomains: [example.com]
+  requireImage: true
