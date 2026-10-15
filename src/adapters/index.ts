@@ -8,10 +8,19 @@ import { files } from "./files.js";
 
 export * from "./types.js";
 
-const FACTORIES = { linkedin, bluesky, mastodon, webhook, files } as const;
-
 export function createAdapter(name: string, cfg: ChannelConfig, deps: AdapterDeps): Adapter {
-  return FACTORIES[cfg.type](name, cfg, deps);
+  switch (cfg.type) {
+    case "linkedin":
+      return linkedin(name, cfg, deps);
+    case "bluesky":
+      return bluesky(name, cfg, deps);
+    case "mastodon":
+      return mastodon(name, cfg, deps);
+    case "webhook":
+      return webhook(name, cfg, deps);
+    case "files":
+      return files(name, cfg, deps);
+  }
 }
 
 export interface Limit {
@@ -20,7 +29,7 @@ export interface Limit {
 }
 
 export function channelLimit(cfg: ChannelConfig): Limit {
-  const override = cfg.maxChars != null ? Number(cfg.maxChars) : undefined;
+  const override = cfg.maxChars;
   switch (cfg.type) {
     case "linkedin":
       return { max: override ?? 3000, graphemes: false };

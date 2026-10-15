@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { cardHtml } from "../src/render/card.js";
 import { config, post } from "./helpers.js";
 
@@ -13,4 +15,14 @@ test("card HTML escapes text and declares UTF-8", () => {
   assert.match(html, /\u201chi\u201d/);
   assert.match(html, /class="chip warn">detected/);
   assert.match(html, /<em>two<\/em>/);
+});
+
+test("SVG logos are embedded as non-executable image data", () => {
+  const cfg = config();
+  writeFileSync(join(cfg.root, "logo.svg"), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><path d="M0 0"/></svg>');
+  cfg.brand.logo = "logo.svg";
+  const p = post(cfg, "card:\n  headline: [Safe logo]");
+  const html = cardHtml(p.card!, cfg.brand, cfg.root, "square");
+  assert.match(html, /<img class="mark" src="data:image\/svg\+xml;base64,/);
+  assert.doesNotMatch(html, /<script>/);
 });

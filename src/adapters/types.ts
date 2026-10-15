@@ -30,6 +30,24 @@ export interface AdapterDeps {
   env: NodeJS.ProcessEnv;
   fetch: FetchLike;
   root: string;
+  requestTimeoutMs?: number;
+}
+
+export async function fetchWithTimeout(
+  deps: AdapterDeps,
+  input: string | URL | Request,
+  init: RequestInit | undefined,
+  what: string,
+): Promise<Response> {
+  const timeoutMs = deps.requestTimeoutMs ?? 30_000;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+  try {
+    return await deps.fetch(input, { ...init, signal });
+  } catch (error) {
+    if (timeoutSignal.aborted) throw new PublishError(`${what} timed out after ${timeoutMs} ms`);
+    throw error;
+  }
 }
 
 export class PublishError extends Error {

@@ -1,6 +1,9 @@
+import { existsSync, statSync } from "node:fs";
+import { extname } from "node:path";
 import type { Config } from "./config.js";
 import { type Post, textFor } from "./content.js";
 import { channelLimit } from "./adapters/index.js";
+import { isPathInside } from "./path.js";
 import { graphemeLength, hashtags, links, hostAllowed, hasEmoji, findMojibake, firstLine } from "./text.js";
 
 export interface Finding {
@@ -51,17 +54,25 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
       if (len > limit.max) {
         add(post, "too-long", "error", `${ch}: ${len} chars, limit is ${limit.max}${post.variants[ch] ? "" : ` (add variants.${ch})`}`);
       }
+      const tags = hashtags(text);
+      if (tags.length > cfg.rules.maxHashtags) {
+        add(post, "hashtags", "error", `${ch}: ${tags.length} hashtags, max is ${cfg.rules.maxHashtags}`);
+      }
+      const hook = firstLine(text);
+      const hookLength = graphemeLength(hook);
+      if (hookLength > cfg.rules.hookMaxChars) {
+        add(post, "hook-length", "warn", `${ch}: first line is ${hookLength} chars, aim for ${cfg.rules.hookMaxChars} or less`);
+      }
+    }
+
+    for (const channel of Object.keys(post.variants)) {
+      if (!post.channels.includes(channel)) add(post, "unused-variant", "warn", `variants.${channel} is not in this post's channels`);
     }
 
     const all = [post.body, ...Object.values(post.variants)].join("\n");
 
     const bad = findMojibake(all) ?? (post.card ? findMojibake(JSON.stringify(post.card)) : undefined);
     if (bad) add(post, "encoding", "error", `looks like broken encoding near "${bad}" (save the file as UTF-8)`);
-
-    const tags = hashtags(post.body);
-    if (tags.length > cfg.rules.maxHashtags) {
-      add(post, "hashtags", "error", `${tags.length} hashtags, max is ${cfg.rules.maxHashtags}`);
-    }
 
     if (!cfg.rules.allowEmoji && hasEmoji(all)) add(post, "emoji", "error", "emoji are turned off for this brand");
 
@@ -73,11 +84,6 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
       }
     }
 
-    const hook = firstLine(post.body);
-    if (hook.length > cfg.rules.hookMaxChars) {
-      add(post, "hook-length", "warn", `first line is ${hook.length} chars, aim for ${cfg.rules.hookMaxChars} or less`);
-    }
-
     const lower = all.toLowerCase();
     for (const phrase of cfg.rules.bannedPhrases) {
       if (lower.includes(phrase.toLowerCase())) add(post, "banned-phrase", "error", `contains "${phrase}"`);
@@ -85,6 +91,13 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
 
     if (cfg.rules.requireImage && !post.card && !post.image) {
       add(post, "no-image", "error", "every post needs a card or an image");
+    }
+    if (post.image) {
+      if (!isPathInside(cfg.root, post.image)) add(post, "image-path", "error", "image must stay inside the project root");
+      else if (!existsSync(post.image) || !statSync(post.image).isFile()) add(post, "image-missing", "error", `image not found: ${post.image}`);
+      const ext = extname(post.image).toLowerCase();
+      if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") add(post, "image-format", "error", "image must be PNG or JPEG");
+      if (!post.alt?.trim()) add(post, "image-alt", "warn", "set alt text for the image");
     }
     if (post.card) {
       post.card.headline.forEach((line, i) => {

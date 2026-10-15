@@ -5,6 +5,7 @@ import type { Browser } from "playwright-core";
 import type { Config } from "../config.js";
 import type { Post } from "../content.js";
 import { cardHtml, SIZES } from "./card.js";
+import { assertSafeFileStem, resolveInside } from "../path.js";
 
 export interface RenderedCard {
   file: string;
@@ -15,7 +16,8 @@ export interface RenderedCard {
 }
 
 export function cardFile(cfg: Config, post: Post): string {
-  return join(cfg.outDir, "cards", `${post.id}.${cfg.card.format === "jpeg" ? "jpg" : "png"}`);
+  assertSafeFileStem(post.id, "post id");
+  return resolveInside(join(cfg.outDir, "cards"), `${post.id}.${cfg.card.format === "jpeg" ? "jpg" : "png"}`);
 }
 
 function cacheFile(cfg: Config) {
@@ -24,7 +26,15 @@ function cacheFile(cfg: Config) {
 
 function readCache(cfg: Config): Record<string, string> {
   const f = cacheFile(cfg);
-  return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
+  if (!existsSync(f)) return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(f, "utf8"));
+  } catch {
+    return {};
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 }
 
 export class Renderer {
@@ -39,7 +49,8 @@ export class Renderer {
     if (!this.browser) {
       const { chromium } = await import("playwright-core");
       try {
-        this.browser = await chromium.launch({ executablePath: process.env.POSTLINE_CHROMIUM || undefined });
+          const executablePath = process.env.POSTLINE_CHROMIUM;
+          this.browser = await chromium.launch(executablePath ? { executablePath } : {});
       } catch (err) {
         throw new Error(
           `could not start Chromium for rendering. Run "npx playwright-core install chromium" or set POSTLINE_CHROMIUM.\n${(err as Error).message}`,
@@ -87,8 +98,9 @@ export class Renderer {
   /** Writes the HTML next to the image, handy for tweaking the template in a browser. */
   writeHtml(post: Post): string {
     if (!post.card) throw new Error(`${post.id} has no card`);
+      assertSafeFileStem(post.id, "post id");
     const size = post.card.size ?? this.cfg.card.size;
-    const file = join(this.cfg.outDir, "cards", `${post.id}.html`);
+      const file = resolveInside(join(this.cfg.outDir, "cards"), `${post.id}.html`);
     mkdirSync(join(this.cfg.outDir, "cards"), { recursive: true });
     writeFileSync(file, cardHtml(post.card, this.cfg.brand, this.cfg.root, size));
     return file;

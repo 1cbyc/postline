@@ -1,7 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve, extname } from "node:path";
+import { extname } from "node:path";
 import type { Brand, CardSize, Tone } from "../config.js";
 import type { CardSpec } from "../content.js";
+import { resolveInside } from "../path.js";
 
 export const SIZES: Record<CardSize, { width: number; height: number }> = {
   square: { width: 1200, height: 1200 },
@@ -19,6 +20,7 @@ export function esc(s: string | undefined): string {
 }
 
 const MIME: Record<string, string> = {
+  ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -37,12 +39,9 @@ function dataUri(file: string): string {
 function logoHtml(brand: Brand, root: string): string {
   let mark = "";
   if (brand.logo) {
-    const file = resolve(root, brand.logo);
+    const file = resolveInside(root, brand.logo);
     if (!existsSync(file)) throw new Error(`brand.logo not found: ${file}`);
-    mark =
-      extname(file).toLowerCase() === ".svg"
-        ? `<span class="mark">${readFileSync(file, "utf8").replace(/<\?xml[^>]*>/, "")}</span>`
-        : `<img class="mark" src="${dataUri(file)}" alt="">`;
+    mark = `<img class="mark" src="${dataUri(file)}" alt="">`;
   }
   const name = brand.showName ? `<span class="name">${esc(brand.name)}</span>` : "";
   return `<div class="logo">${mark}${name}</div>`;
@@ -51,7 +50,7 @@ function logoHtml(brand: Brand, root: string): string {
 function fontHtml(brand: Brand, root: string): string {
   const { family, url, file } = brand.font;
   if (file) {
-    const p = resolve(root, file);
+    const p = resolveInside(root, file);
     return `<style>@font-face{font-family:"${esc(family)}";src:url(${dataUri(p)});font-weight:100 900;font-display:block}</style>`;
   }
   if (url) return `<link rel="stylesheet" href="${esc(url)}">`;

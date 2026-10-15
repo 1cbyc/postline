@@ -26,7 +26,7 @@ function opts(fetchImpl: typeof fetch, now: string, extra: Partial<PublishOption
 function fakeLinkedIn() {
   const calls: { url: string; init?: RequestInit }[] = [];
   const f = (async (url: string, init?: RequestInit) => {
-    calls.push({ url, init });
+      calls.push({ url, ...(init === undefined ? {} : { init }) });
     if (url.endsWith("/posts")) return new Response(null, { status: 201, headers: { "x-restli-id": "urn:li:share:1" } });
     return new Response("{}", { status: 200 });
   }) as unknown as typeof fetch;
@@ -64,6 +64,24 @@ test("an unfinished attempt blocks instead of double posting", async () => {
   const out = await publishDue(cfg, [p], ledger, opts(f, "2026-10-27T13:05:00Z"));
   assert.deepEqual(out.map((o) => o.result), ["blocked"]);
   assert.equal(calls.length, 0);
+});
+
+test("two-phase publishing persists attempting before the network call", async () => {
+  const cfg = config({ channels: { linkedin: { type: "linkedin", organization: "42" } } });
+  const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [linkedin]");
+  const ledger = new Ledger(cfg.stateDir);
+  const { f, calls } = fakeLinkedIn();
+
+  const prepared = await publishDue(cfg, [p], ledger, opts(f, "2026-10-27T13:05:00Z", { prepareOnly: true }));
+  assert.deepEqual(prepared.map((outcome) => outcome.result), ["prepared"]);
+  assert.equal(ledger.get("p1", "linkedin")?.status, "attempting");
+  assert.equal(ledger.get("p1", "linkedin")?.attempts, 1);
+  assert.equal(calls.length, 0);
+
+  const sent = await publishDue(cfg, [p], new Ledger(cfg.stateDir), opts(f, "2026-10-27T13:06:00Z", { resumePrepared: true }));
+  assert.deepEqual(sent.map((outcome) => outcome.result), ["published"]);
+  assert.equal(calls.length, 1);
+  assert.equal(new Ledger(cfg.stateDir).get("p1", "linkedin")?.attempts, 1);
 });
 
 test("failures are retried up to maxAttempts", async () => {

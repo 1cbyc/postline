@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { Adapter, AdapterDeps, PublishInput, PublishResult } from "./types.js";
-import { expectOk, PublishError } from "./types.js";
-import type { ChannelConfig } from "../config.js";
+import { expectOk, fetchWithTimeout, PublishError } from "./types.js";
+import type { WebhookChannelConfig } from "../config.js";
 
 export function sign(secret: string, body: string): string {
   return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
@@ -12,10 +12,10 @@ export function sign(secret: string, body: string): string {
  * approval bot, your own service. This is how you reach channels postline
  * doesn't ship an adapter for.
  */
-export function webhook(name: string, cfg: ChannelConfig, deps: AdapterDeps): Adapter {
+export function webhook(name: string, cfg: WebhookChannelConfig, deps: AdapterDeps): Adapter {
   if (!cfg.url) throw new PublishError(`${name}: set "url"`);
-  const url = String(cfg.url);
-  const secretEnv = String(cfg.secretEnv ?? "POSTLINE_WEBHOOK_SECRET");
+  const url = cfg.url;
+  const secretEnv = cfg.secretEnv;
 
   return {
     async publish({ post, channel, text, image }: PublishInput): Promise<PublishResult> {
@@ -37,12 +37,12 @@ export function webhook(name: string, cfg: ChannelConfig, deps: AdapterDeps): Ad
       const secret = deps.env[secretEnv];
       if (secret) headers["X-Postline-Signature"] = sign(secret, body);
 
-      const res = await expectOk(await deps.fetch(url, { method: "POST", headers, body }), `${name}: webhook`);
+        const res = await expectOk(await fetchWithTimeout(deps, url, { method: "POST", headers, body }, `${name}: webhook`), `${name}: webhook`);
       let reply: { id?: string; url?: string } = {};
       try {
         reply = (await res.json()) as typeof reply;
       } catch {}
-      return { id: reply.id ?? delivery, url: reply.url };
+        return { id: reply.id ?? delivery, ...(reply.url === undefined ? {} : { url: reply.url }) };
     },
   };
 }

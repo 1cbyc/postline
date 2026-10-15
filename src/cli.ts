@@ -28,6 +28,7 @@ Commands
   render [id] [--force]    render cards to out/cards (--html also writes HTML)
   publish [--dry-run]      send posts whose time has come
           [--now ISO] [--catch-up] [--only ID]
+          [--prepare-only | --resume-prepared]
   retry <id> <channel>     clear a stuck or failed entry so it sends again
   mark <id> <channel> <published|skipped> [--url URL]
                            record the outcome yourself (e.g. a stuck post that did go out)
@@ -62,7 +63,7 @@ export function parseArgs(argv: string[]): Args {
   return out;
 }
 
-const BOOL_FLAGS = new Set(["force", "dry-run", "catch-up", "html", "help", "version"]);
+const BOOL_FLAGS = new Set(["force", "dry-run", "catch-up", "prepare-only", "resume-prepared", "html", "help", "version"]);
 
 function str(args: Args, k: string): string | undefined {
   const v = args.flags[k];
@@ -71,7 +72,11 @@ function str(args: Args, k: string): string | undefined {
 
 function resolveWeek(cfg: Config, args: Args): string {
   const w = str(args, "week");
-  return w ? weekStart(cfg, w) : nextWeekStart(cfg, new Date());
+  try {
+    return w ? weekStart(cfg, w) : nextWeekStart(cfg, new Date());
+  } catch (error) {
+    throw new ConfigError(`--week "${w}" is invalid: ${(error as Error).message}`);
+  }
 }
 
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -198,15 +203,24 @@ async function main(argv: string[]): Promise<number> {
       const nowFlag = str(args, "now");
       const now = nowFlag ? new Date(nowFlag) : new Date();
       if (Number.isNaN(now.getTime())) throw new ConfigError(`--now "${nowFlag}" is not a date`);
+      const prepareOnly = Boolean(args.flags["prepare-only"]);
+      const resumePrepared = Boolean(args.flags["resume-prepared"]);
+      if (prepareOnly && resumePrepared) throw new ConfigError("--prepare-only and --resume-prepared cannot be used together");
+      if (Boolean(args.flags["dry-run"]) && (prepareOnly || resumePrepared)) {
+        throw new ConfigError("--dry-run cannot be combined with --prepare-only or --resume-prepared");
+      }
       const ledger = new Ledger(cfg.stateDir);
       let renderer: Renderer | undefined;
+      const only = str(args, "only");
       try {
         const outcomes = await publishDue(cfg, posts, ledger, {
           now,
           dryRun: Boolean(args.flags["dry-run"]),
           catchUp: Boolean(args.flags["catch-up"]),
-          only: str(args, "only"),
-          deps: { env: process.env, fetch: globalThis.fetch, root: cfg.root },
+          prepareOnly,
+          resumePrepared,
+          ...(only === undefined ? {} : { only }),
+          deps: { env: process.env, fetch: globalThis.fetch, root: cfg.root, requestTimeoutMs: cfg.publish.requestTimeoutMs },
           renderer: () => (renderer ??= new Renderer(cfg)),
           log: (l) => console.log(l),
         });
@@ -240,7 +254,12 @@ async function main(argv: string[]): Promise<number> {
         return 1;
       }
       const ledger = new Ledger(cfg.stateDir);
-      ledger.set(id, channel, { status, url: str(args, "url"), error: status === "skipped" ? "marked by hand" : undefined });
+      const url = str(args, "url");
+      ledger.set(id, channel, {
+        status,
+        ...(url === undefined ? {} : { url }),
+        ...(status === "skipped" ? { error: "marked by hand" } : {}),
+      });
       ledger.save();
       console.log(`marked ${id} on ${channel} as ${status}`);
       return 0;

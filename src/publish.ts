@@ -12,6 +12,8 @@ export interface PublishOptions {
   now: Date;
   dryRun: boolean;
   catchUp: boolean;
+  prepareOnly?: boolean;
+  resumePrepared?: boolean;
   only?: string;
   deps: AdapterDeps;
   renderer: () => Renderer;
@@ -21,7 +23,7 @@ export interface PublishOptions {
 export interface Outcome {
   post: string;
   channel: string;
-  result: "published" | "dry-run" | "failed" | "skipped" | "blocked";
+  result: "prepared" | "published" | "dry-run" | "failed" | "skipped" | "blocked";
   detail?: string;
 }
 
@@ -46,6 +48,7 @@ async function mediaFor(post: Post, opts: PublishOptions, cache: Map<string, Med
   const alt = post.alt ?? (post.card ? post.card.headline.join(" ") : firstLine(post.body));
   if (post.image) {
     const ext = extname(post.image).toLowerCase();
+    if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") throw new Error(`${post.id}: image must be PNG or JPEG`);
     media = { bytes: readFileSync(post.image), mime: ext === ".png" ? "image/png" : "image/jpeg", alt };
   } else if (post.card) {
     const r = await opts.renderer().render(post);
@@ -64,7 +67,8 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
     const tag = `${post.id} -> ${channel}`;
     const entry = ledger.get(post.id, channel);
 
-    if (entry?.status === "attempting") {
+    if (opts.resumePrepared && entry?.status !== "attempting") continue;
+    if (!opts.resumePrepared && entry?.status === "attempting") {
       // A previous run started this and never recorded the result. It may have
       // gone out. Don't guess; a human checks and runs `postline retry`.
       outcomes.push({ post: post.id, channel, result: "blocked", detail: "previous attempt did not finish, check the channel then run postline retry" });
@@ -95,6 +99,14 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
     if (!chCfg) continue; // lint already flagged it
     const text = textFor(post, channel);
 
+    if (opts.prepareOnly) {
+      ledger.set(post.id, channel, { status: "attempting" }, opts.now);
+      ledger.save();
+      outcomes.push({ post: post.id, channel, result: "prepared" });
+      opts.log(`> ${tag}: prepared; persist the ledger before sending`);
+      continue;
+    }
+
     if (opts.dryRun) {
       const img = await mediaFor(post, opts, media);
       opts.log(`~ ${tag}: would publish ${text.length} chars${img ? ` + image (${Math.round(img.bytes.length / 1024)} KB)` : ""}`);
@@ -102,13 +114,15 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       continue;
     }
 
-    ledger.set(post.id, channel, { status: "attempting" }, opts.now);
-    ledger.save();
+    if (!opts.resumePrepared) {
+      ledger.set(post.id, channel, { status: "attempting" }, opts.now);
+      ledger.save();
+    }
     try {
       const image = await mediaFor(post, opts, media);
       const adapter = createAdapter(channel, chCfg, opts.deps);
-      const res = await adapter.publish({ post, channel, text, image });
-      ledger.set(post.id, channel, { status: "published", remoteId: res.id, url: res.url }, new Date());
+      const res = await adapter.publish({ post, channel, text, ...(image === undefined ? {} : { image }) });
+      ledger.set(post.id, channel, { status: "published", remoteId: res.id, ...(res.url === undefined ? {} : { url: res.url }) }, new Date());
       outcomes.push({ post: post.id, channel, result: "published", detail: res.url ?? res.id });
       opts.log(`+ ${tag}: ${res.url ?? res.id}`);
     } catch (err) {

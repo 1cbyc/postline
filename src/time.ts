@@ -8,6 +8,15 @@ export type Weekday = (typeof WEEKDAYS)[number];
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+function dateParts(value: string): [number, number, number] {
+  const match = DATE_RE.exec(value);
+  if (!match) throw new Error(`invalid date "${value}" (expected YYYY-MM-DD)`);
+  const result: [number, number, number] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const normalized = new Date(Date.UTC(result[0], result[1] - 1, result[2])).toISOString().slice(0, 10);
+  if (normalized !== value) throw new Error(`invalid date "${value}"`);
+  return result;
+}
+
 export function isValidTimeZone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
@@ -44,15 +53,32 @@ export function tzOffset(date: Date, tz: string): number {
 
 /** Wall-clock date + time in `tz` -> UTC instant. */
 export function zonedToUtc(date: string, time: string, tz: string): Date {
-  const d = DATE_RE.exec(date);
+  const [year, month, day] = dateParts(date);
   const t = TIME_RE.exec(time);
-  if (!d) throw new Error(`invalid date "${date}" (expected YYYY-MM-DD)`);
   if (!t) throw new Error(`invalid time "${time}" (expected HH:MM, 24h)`);
-  const naive = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]));
+  const naive = Date.UTC(year, month - 1, day, Number(t[1]), Number(t[2]));
   // Two passes handle DST transitions.
   let guess = naive - tzOffset(new Date(naive), tz);
   guess = naive - tzOffset(new Date(guess), tz);
-  return new Date(guess);
+  const result = new Date(guess);
+  const actual = parts(result, tz);
+  const expected = {
+    year,
+    month,
+    day,
+    hour: Number(t[1]),
+    minute: Number(t[2]),
+  };
+  if (
+    actual.year !== expected.year ||
+    actual.month !== expected.month ||
+    actual.day !== expected.day ||
+    actual.hour !== expected.hour ||
+    actual.minute !== expected.minute
+  ) {
+    throw new Error(`invalid or nonexistent local datetime "${date} ${time}" in ${tz}`);
+  }
+  return result;
 }
 
 /** Parse "YYYY-MM-DD HH:MM" (or with a T) in `tz`. */
@@ -73,16 +99,14 @@ export function localTime(date: Date, tz: string): string {
 }
 
 export function weekdayOf(date: string): Weekday {
-  const d = DATE_RE.exec(date);
-  if (!d) throw new Error(`invalid date "${date}"`);
-  const idx = new Date(Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]))).getUTCDay();
+  const [year, month, day] = dateParts(date);
+  const idx = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
   return WEEKDAYS[idx]!;
 }
 
 export function addDays(date: string, n: number): string {
-  const d = DATE_RE.exec(date);
-  if (!d) throw new Error(`invalid date "${date}"`);
-  const ms = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3])) + n * DAY_MS;
+  const [year, month, day] = dateParts(date);
+  const ms = Date.UTC(year, month - 1, day) + n * DAY_MS;
   return new Date(ms).toISOString().slice(0, 10);
 }
 

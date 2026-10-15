@@ -1,9 +1,12 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import YAML from "yaml";
+import { isPathInside } from "./path.js";
 import { isValidTimeZone, WEEKDAYS, type Weekday } from "./time.js";
 
 export type Tone = "ok" | "warn" | "bad" | "neutral";
+export type CardSize = "square" | "landscape" | "portrait";
+type UnknownRecord = Record<string, unknown>;
 
 export interface BrandColors {
   background: string;
@@ -37,10 +40,54 @@ export interface Rules {
   bannedPhrases: string[];
 }
 
-export interface ChannelConfig {
-  type: "linkedin" | "bluesky" | "mastodon" | "webhook" | "files";
-  [key: string]: unknown;
+interface ChannelBase {
+  maxChars?: number;
 }
+
+export interface LinkedInChannelConfig extends ChannelBase {
+  type: "linkedin";
+  organization?: string;
+  person?: string;
+  version: string;
+  tokenEnv: string;
+}
+
+export interface BlueskyChannelConfig extends ChannelBase {
+  type: "bluesky";
+  service: string;
+  lang: string;
+  identifierEnv: string;
+  passwordEnv: string;
+}
+
+export interface MastodonChannelConfig extends ChannelBase {
+  type: "mastodon";
+  instance: string;
+  visibility: "public" | "unlisted" | "private" | "direct";
+  lang: string;
+  tokenEnv: string;
+  pollMs: number;
+}
+
+export interface WebhookChannelConfig extends ChannelBase {
+  type: "webhook";
+  url: string;
+  secretEnv: string;
+}
+
+export interface FilesChannelConfig extends ChannelBase {
+  type: "files";
+  dir: string;
+  assetsDir?: string;
+  assetsUrl?: string;
+}
+
+export type ChannelConfig =
+  | LinkedInChannelConfig
+  | BlueskyChannelConfig
+  | MastodonChannelConfig
+  | WebhookChannelConfig
+  | FilesChannelConfig;
 
 export interface Config {
   root: string;
@@ -52,14 +99,16 @@ export interface Config {
   outDir: string;
   stateDir: string;
   card: { size: CardSize; format: "png" | "jpeg"; quality: number; scale: number };
-  publish: { lateMinutes: number; maxAttempts: number };
+  publish: { lateMinutes: number; maxAttempts: number; requestTimeoutMs: number };
   channels: Record<string, ChannelConfig>;
   rules: Rules;
 }
 
-export type CardSize = "square" | "landscape" | "portrait";
-
-const CHANNEL_TYPES = new Set(["linkedin", "bluesky", "mastodon", "webhook", "files"]);
+const CHANNEL_TYPES = ["linkedin", "bluesky", "mastodon", "webhook", "files"] as const;
+const CARD_SIZES = ["square", "landscape", "portrait"] as const;
+const TONES = ["ok", "warn", "bad", "neutral"] as const;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CHANNEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const DEFAULT_COLORS: BrandColors = {
   background: "#0f1115",
@@ -75,105 +124,301 @@ const DEFAULT_COLORS: BrandColors = {
 
 export class ConfigError extends Error {}
 
+function record(value: unknown, label: string): UnknownRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ConfigError(`${label} must be a mapping`);
+  return value as UnknownRecord;
+}
+
+function optionalRecord(value: unknown, label: string): UnknownRecord {
+  return value == null ? {} : record(value, label);
+}
+
+function stringValue(value: unknown, label: string, fallback?: string): string {
+  if (value == null && fallback !== undefined) return fallback;
+  if (typeof value !== "string" || value.trim() === "") throw new ConfigError(`${label} must be a non-empty string`);
+  return value;
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  return value == null ? undefined : stringValue(value, label);
+}
+
+function booleanValue(value: unknown, label: string, fallback: boolean): boolean {
+  if (value == null) return fallback;
+  if (typeof value !== "boolean") throw new ConfigError(`${label} must be true or false`);
+  return value;
+}
+
+function numberValue(
+  value: unknown,
+  label: string,
+  fallback: number,
+  options: { min: number; max: number; integer?: boolean },
+): number {
+  if (value == null) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new ConfigError(`${label} must be a finite number`);
+  if (options.integer && !Number.isInteger(value)) throw new ConfigError(`${label} must be an integer`);
+  if (value < options.min || value > options.max) {
+    throw new ConfigError(`${label} must be between ${options.min} and ${options.max}`);
+  }
+  return value;
+}
+
+function stringArray(value: unknown, label: string, fallback: string[] = []): string[] {
+  if (value == null) return fallback;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) {
+    throw new ConfigError(`${label} must be a list of non-empty strings`);
+  }
+  return value;
+}
+
+function tuple(value: unknown, label: string, fallback: [string, string]): [string, string] {
+  if (value == null) return fallback;
+  if (!Array.isArray(value) || value.length !== 2 || value.some((item) => typeof item !== "string" || item === "")) {
+    throw new ConfigError(`${label} must be [fill, text]`);
+  }
+  if (value.some((item) => !/^[#(),.%+\-\sA-Za-z0-9]+$/.test(item as string))) {
+    throw new ConfigError(`${label} contains unsafe CSS characters`);
+  }
+  return [value[0] as string, value[1] as string];
+}
+
+function httpUrl(value: unknown, label: string): string {
+  const text = stringValue(value, label);
+  let parsed: URL;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new ConfigError(`${label} must be an absolute HTTP or HTTPS URL`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new ConfigError(`${label} must use HTTP or HTTPS`);
+  return text;
+}
+
+function language(value: unknown, label: string, fallback: string): string {
+  const lang = stringValue(value, label, fallback);
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(lang)) throw new ConfigError(`${label} must be a language tag such as en or en-US`);
+  return lang;
+}
+
+function cssColor(value: unknown, label: string, fallback: string): string {
+  const color = stringValue(value, label, fallback);
+  if (!/^[#(),.%+\-\sA-Za-z0-9]+$/.test(color)) throw new ConfigError(`${label} contains unsafe CSS characters`);
+  return color;
+}
+
+function projectPath(root: string, value: unknown, label: string, fallback: string): string {
+  const path = resolve(root, stringValue(value, label, fallback));
+  if (!isPathInside(root, path)) throw new ConfigError(`${label} must stay inside the project root`);
+  return path;
+}
+
+function envName(value: unknown, label: string, fallback: string): string {
+  const name = stringValue(value, label, fallback);
+  if (!ENV_NAME.test(name)) throw new ConfigError(`${label} must be an environment variable name`);
+  return name;
+}
+
+function optionalMaxChars(value: unknown, label: string): number | undefined {
+  return value == null ? undefined : numberValue(value, label, 1, { min: 1, max: 1_000_000, integer: true });
+}
+
+function normalizeChannel(name: string, input: unknown): ChannelConfig {
+  if (!CHANNEL_NAME.test(name)) throw new ConfigError(`channel name "${name}" is not safe`);
+  const raw = record(input, `channels.${name}`);
+  const typeValue = raw.type ?? name;
+  if (typeof typeValue !== "string" || !CHANNEL_TYPES.includes(typeValue as (typeof CHANNEL_TYPES)[number])) {
+    throw new ConfigError(`channels.${name}: unknown type "${String(typeValue)}"`);
+  }
+  const type = typeValue as ChannelConfig["type"];
+  const maxChars = optionalMaxChars(raw.maxChars, `channels.${name}.maxChars`);
+  const common = maxChars === undefined ? {} : { maxChars };
+
+  switch (type) {
+    case "linkedin": {
+      const organization = optionalString(raw.organization, `channels.${name}.organization`);
+      const person = optionalString(raw.person, `channels.${name}.person`);
+      if (Boolean(organization) === Boolean(person)) {
+        throw new ConfigError(`channels.${name} must set exactly one of organization or person`);
+      }
+      const version = stringValue(raw.version, `channels.${name}.version`, "202609");
+      if (!/^20\d{4}$/.test(version)) throw new ConfigError(`channels.${name}.version must be YYYYMM`);
+      const tokenEnv = envName(raw.tokenEnv, `channels.${name}.tokenEnv`, "LINKEDIN_ACCESS_TOKEN");
+      if (organization) return { ...common, type: "linkedin", organization, version, tokenEnv };
+      if (person) return { ...common, type: "linkedin", person, version, tokenEnv };
+      throw new ConfigError(`channels.${name} must set exactly one of organization or person`);
+    }
+    case "bluesky":
+      return {
+        ...common,
+        type: "bluesky",
+        service: raw.service == null ? "https://bsky.social" : httpUrl(raw.service, `channels.${name}.service`),
+        lang: language(raw.lang, `channels.${name}.lang`, "en"),
+        identifierEnv: envName(raw.identifierEnv, `channels.${name}.identifierEnv`, "BLUESKY_IDENTIFIER"),
+        passwordEnv: envName(raw.passwordEnv, `channels.${name}.passwordEnv`, "BLUESKY_APP_PASSWORD"),
+      };
+    case "mastodon":
+      return {
+        ...common,
+        type: "mastodon",
+        instance: httpUrl(raw.instance, `channels.${name}.instance`),
+        visibility: (() => {
+          const visibility = stringValue(raw.visibility, `channels.${name}.visibility`, "public");
+          if (!["public", "unlisted", "private", "direct"].includes(visibility)) {
+            throw new ConfigError(`channels.${name}.visibility must be public, unlisted, private or direct`);
+          }
+          return visibility as MastodonChannelConfig["visibility"];
+        })(),
+        lang: language(raw.lang, `channels.${name}.lang`, "en"),
+        tokenEnv: envName(raw.tokenEnv, `channels.${name}.tokenEnv`, "MASTODON_ACCESS_TOKEN"),
+        pollMs: numberValue(raw.pollMs, `channels.${name}.pollMs`, 1000, { min: 100, max: 60_000, integer: true }),
+      };
+    case "webhook":
+      return {
+        ...common,
+        type: "webhook",
+        url: httpUrl(raw.url, `channels.${name}.url`),
+        secretEnv: envName(raw.secretEnv, `channels.${name}.secretEnv`, "POSTLINE_WEBHOOK_SECRET"),
+      };
+    case "files":
+      return {
+        ...common,
+        type: "files",
+        dir: stringValue(raw.dir, `channels.${name}.dir`),
+        ...(raw.assetsDir == null ? {} : { assetsDir: stringValue(raw.assetsDir, `channels.${name}.assetsDir`) }),
+        ...(raw.assetsUrl == null ? {} : { assetsUrl: stringValue(raw.assetsUrl, `channels.${name}.assetsUrl`) }),
+      };
+  }
+}
+
 export function findConfig(cwd: string, explicit?: string): string {
   if (explicit) {
-    const p = resolve(cwd, explicit);
-    if (!existsSync(p)) throw new ConfigError(`config not found: ${p}`);
-    return p;
+    const configPath = resolve(cwd, explicit);
+    if (!existsSync(configPath)) throw new ConfigError(`config not found: ${configPath}`);
+    return configPath;
   }
   for (const name of ["postline.config.yaml", "postline.config.yml"]) {
-    const p = join(cwd, name);
-    if (existsSync(p)) return p;
+    const configPath = join(cwd, name);
+    if (existsSync(configPath)) return configPath;
   }
   throw new ConfigError(`no postline.config.yaml in ${cwd} (run "postline init" to create one)`);
 }
 
 export function loadConfig(cwd: string, explicit?: string): Config {
   const file = findConfig(cwd, explicit);
-  const raw = YAML.parse(readFileSync(file, "utf8")) ?? {};
-  return normalizeConfig(raw, resolve(file, ".."), file);
+  let raw: unknown;
+  try {
+    raw = YAML.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new ConfigError(`could not parse ${file}: ${(error as Error).message}`);
+  }
+  return normalizeConfig(raw ?? {}, resolve(file, ".."), file);
 }
 
-export function normalizeConfig(raw: any, root: string, file = "<inline>"): Config {
-  if (typeof raw !== "object" || raw === null) throw new ConfigError("config must be a mapping");
-  const brandRaw = raw.brand ?? {};
-  if (!brandRaw.name) throw new ConfigError("brand.name is required");
+export function normalizeConfig(input: unknown, root: string, file = "<inline>"): Config {
+  const raw = record(input, "config");
+  const brandRaw = optionalRecord(raw.brand, "brand");
+  const scheduleRaw = optionalRecord(raw.schedule, "schedule");
+  const cardRaw = optionalRecord(raw.card, "card");
+  const publishRaw = optionalRecord(raw.publish, "publish");
+  const rulesRaw = optionalRecord(raw.rules, "rules");
+  const colorsRaw = optionalRecord(brandRaw.colors, "brand.colors");
+  const fontInput = brandRaw.font;
+  const fontRaw = typeof fontInput === "string" ? { family: fontInput } : optionalRecord(fontInput, "brand.font");
 
-  const timezone = raw.timezone ?? "UTC";
+  const timezone = stringValue(raw.timezone, "timezone", "UTC");
   if (!isValidTimeZone(timezone)) throw new ConfigError(`unknown timezone "${timezone}"`);
 
-  const colors = { ...DEFAULT_COLORS, ...(brandRaw.colors ?? {}) } as BrandColors;
-  for (const tone of ["ok", "warn", "bad"] as const) {
-    const v = colors[tone];
-    if (!Array.isArray(v) || v.length !== 2) {
-      throw new ConfigError(`brand.colors.${tone} must be [fill, text]`);
-    }
+  const days = stringArray(scheduleRaw.days, "schedule.days", ["mon", "tue", "wed", "thu", "fri"]);
+  if (days.length === 0) throw new ConfigError("schedule.days must not be empty");
+  const normalizedDays = days.map((day) => day.slice(0, 3).toLowerCase());
+  if (normalizedDays.some((day) => !WEEKDAYS.includes(day as Weekday))) throw new ConfigError("schedule.days contains an unknown day");
+  if (new Set(normalizedDays).size !== normalizedDays.length) throw new ConfigError("schedule.days must not contain duplicates");
+
+  const times = stringArray(scheduleRaw.times, "schedule.times", ["09:00"]);
+  if (times.length === 0) throw new ConfigError("schedule.times must not be empty");
+  if (times.some((time) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) throw new ConfigError("schedule.times must use HH:MM in 24-hour time");
+  if (new Set(times).size !== times.length) throw new ConfigError("schedule.times must not contain duplicates");
+
+  const weekStartsOnText = stringValue(scheduleRaw.weekStartsOn, "schedule.weekStartsOn", normalizedDays[0] ?? "mon")
+    .slice(0, 3)
+    .toLowerCase();
+  if (!WEEKDAYS.includes(weekStartsOnText as Weekday)) throw new ConfigError(`schedule.weekStartsOn: unknown day "${weekStartsOnText}"`);
+
+  const channelRaw = optionalRecord(raw.channels, "channels");
+  const channels = Object.fromEntries(Object.entries(channelRaw).map(([name, value]) => [name, normalizeChannel(name, value)]));
+
+  const sizeValue = stringValue(cardRaw.size, "card.size", "square");
+  if (!CARD_SIZES.includes(sizeValue as CardSize)) throw new ConfigError("card.size must be square, landscape or portrait");
+  const formatValue = stringValue(cardRaw.format, "card.format", "png");
+  if (formatValue !== "png" && formatValue !== "jpeg") throw new ConfigError("card.format must be png or jpeg");
+
+  const colors: BrandColors = {
+    background: cssColor(colorsRaw.background, "brand.colors.background", DEFAULT_COLORS.background),
+    panel: cssColor(colorsRaw.panel, "brand.colors.panel", DEFAULT_COLORS.panel),
+    border: cssColor(colorsRaw.border, "brand.colors.border", DEFAULT_COLORS.border),
+    text: cssColor(colorsRaw.text, "brand.colors.text", DEFAULT_COLORS.text),
+    muted: cssColor(colorsRaw.muted, "brand.colors.muted", DEFAULT_COLORS.muted),
+    accent: cssColor(colorsRaw.accent, "brand.colors.accent", DEFAULT_COLORS.accent),
+    ok: tuple(colorsRaw.ok, "brand.colors.ok", DEFAULT_COLORS.ok),
+    warn: tuple(colorsRaw.warn, "brand.colors.warn", DEFAULT_COLORS.warn),
+    bad: tuple(colorsRaw.bad, "brand.colors.bad", DEFAULT_COLORS.bad),
+  };
+
+  const chipRaw = optionalRecord(brandRaw.chips, "brand.chips");
+  const chips: Record<string, Tone> = { allowed: "ok", detected: "warn", blocked: "bad" };
+  for (const [name, value] of Object.entries(chipRaw)) {
+    if (typeof value !== "string" || !TONES.includes(value as Tone)) throw new ConfigError(`brand.chips.${name} must be ok, warn, bad or neutral`);
+    chips[name] = value as Tone;
   }
 
-  const font =
-    typeof brandRaw.font === "string"
-      ? { family: brandRaw.font }
-      : { family: "Inter", ...(brandRaw.font ?? {}) };
-
-  const days: Weekday[] = (raw.schedule?.days ?? ["mon", "tue", "wed", "thu", "fri"]).map((d: string) => {
-    const k = String(d).slice(0, 3).toLowerCase() as Weekday;
-    if (!WEEKDAYS.includes(k)) throw new ConfigError(`schedule.days: unknown day "${d}"`);
-    return k;
-  });
-  const times: string[] = (raw.schedule?.times ?? ["09:00"]).map((t: unknown) => String(t));
-  for (const t of times) {
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new ConfigError(`schedule.times: "${t}" is not HH:MM`);
-  }
-  const weekStartsOn = String(raw.schedule?.weekStartsOn ?? days[0] ?? "mon").slice(0, 3).toLowerCase() as Weekday;
-
-  const channels: Record<string, ChannelConfig> = {};
-  for (const [name, value] of Object.entries<any>(raw.channels ?? {})) {
-    const type = value?.type ?? name;
-    if (!CHANNEL_TYPES.has(type)) throw new ConfigError(`channels.${name}: unknown type "${type}"`);
-    channels[name] = { ...value, type };
-  }
-
-  const size = (raw.card?.size ?? "square") as CardSize;
-  if (!["square", "landscape", "portrait"].includes(size)) {
-    throw new ConfigError(`card.size must be square, landscape or portrait`);
-  }
+  const fontUrl = fontRaw.url == null ? undefined : httpUrl(fontRaw.url, "brand.font.url");
+  const fontFile = optionalString(fontRaw.file, "brand.font.file");
+  if (fontUrl && fontFile) throw new ConfigError("brand.font must not set both url and file");
+  const brandUrl = optionalString(brandRaw.url, "brand.url");
+  const brandLogo = optionalString(brandRaw.logo, "brand.logo");
 
   return {
     root,
     file,
     timezone,
     brand: {
-      name: String(brandRaw.name),
-      url: brandRaw.url,
-      logo: brandRaw.logo,
-      showName: brandRaw.showName ?? true,
-      font,
+      name: stringValue(brandRaw.name, "brand.name"),
+      ...(brandUrl ? { url: brandUrl } : {}),
+      ...(brandLogo ? { logo: brandLogo } : {}),
+      showName: booleanValue(brandRaw.showName, "brand.showName", true),
+      font: {
+        family: stringValue(fontRaw.family, "brand.font.family", "Inter"),
+        ...(fontUrl ? { url: fontUrl } : {}),
+        ...(fontFile ? { file: fontFile } : {}),
+      },
       colors,
-      chips: { allowed: "ok", detected: "warn", blocked: "bad", ...(brandRaw.chips ?? {}) },
+      chips,
     },
-    schedule: { days, times, weekStartsOn },
-    postsDir: resolve(root, raw.postsDir ?? "posts"),
-    outDir: resolve(root, raw.outDir ?? "out"),
-    stateDir: resolve(root, raw.stateDir ?? ".postline"),
+    schedule: { days: normalizedDays as Weekday[], times, weekStartsOn: weekStartsOnText as Weekday },
+    postsDir: projectPath(root, raw.postsDir, "postsDir", "posts"),
+    outDir: projectPath(root, raw.outDir, "outDir", "out"),
+    stateDir: projectPath(root, raw.stateDir, "stateDir", ".postline"),
     card: {
-      size,
-      format: raw.card?.format === "jpeg" ? "jpeg" : "png",
-      quality: Number(raw.card?.quality ?? 90),
-      scale: Number(raw.card?.scale ?? 2),
+      size: sizeValue as CardSize,
+      format: formatValue,
+      quality: numberValue(cardRaw.quality, "card.quality", 90, { min: 1, max: 100, integer: true }),
+      scale: numberValue(cardRaw.scale, "card.scale", 2, { min: 1, max: 4 }),
     },
     publish: {
-      lateMinutes: Number(raw.publish?.lateMinutes ?? 180),
-      maxAttempts: Number(raw.publish?.maxAttempts ?? 3),
+      lateMinutes: numberValue(publishRaw.lateMinutes, "publish.lateMinutes", 180, { min: 0, max: 525_600 }),
+      maxAttempts: numberValue(publishRaw.maxAttempts, "publish.maxAttempts", 3, { min: 1, max: 100, integer: true }),
+      requestTimeoutMs: numberValue(publishRaw.requestTimeoutMs, "publish.requestTimeoutMs", 30_000, { min: 100, max: 300_000, integer: true }),
     },
     channels,
     rules: {
-      maxHashtags: Number(raw.rules?.maxHashtags ?? 3),
-      allowEmoji: raw.rules?.allowEmoji ?? true,
-      allowedLinkDomains: raw.rules?.allowedLinkDomains ?? [],
-      hookMaxChars: Number(raw.rules?.hookMaxChars ?? 140),
-      requireImage: raw.rules?.requireImage ?? false,
-      topicCooldownDays: Number(raw.rules?.topicCooldownDays ?? 14),
-      bannedPhrases: raw.rules?.bannedPhrases ?? [],
+      maxHashtags: numberValue(rulesRaw.maxHashtags, "rules.maxHashtags", 3, { min: 0, max: 100, integer: true }),
+      allowEmoji: booleanValue(rulesRaw.allowEmoji, "rules.allowEmoji", true),
+      allowedLinkDomains: stringArray(rulesRaw.allowedLinkDomains, "rules.allowedLinkDomains"),
+      hookMaxChars: numberValue(rulesRaw.hookMaxChars, "rules.hookMaxChars", 140, { min: 1, max: 100_000, integer: true }),
+      requireImage: booleanValue(rulesRaw.requireImage, "rules.requireImage", false),
+      topicCooldownDays: numberValue(rulesRaw.topicCooldownDays, "rules.topicCooldownDays", 14, { min: 0, max: 3650 }),
+      bannedPhrases: stringArray(rulesRaw.bannedPhrases, "rules.bannedPhrases"),
     },
   };
 }

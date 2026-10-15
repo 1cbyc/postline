@@ -1,6 +1,6 @@
 import type { Adapter, AdapterDeps, PublishInput, PublishResult } from "./types.js";
-import { expectOk, PublishError, requireEnv } from "./types.js";
-import type { ChannelConfig } from "../config.js";
+import { expectOk, fetchWithTimeout, PublishError, requireEnv } from "./types.js";
+import type { BlueskyChannelConfig } from "../config.js";
 import { HASHTAG_RE, links } from "../text.js";
 
 const MAX_BLOB = 1_000_000;
@@ -33,10 +33,10 @@ export function facetsFor(text: string): Facet[] {
   return out.sort((a, b) => a.index.byteStart - b.index.byteStart);
 }
 
-export function bluesky(name: string, cfg: ChannelConfig, deps: AdapterDeps): Adapter {
-  const service = String(cfg.service ?? "https://bsky.social").replace(/\/$/, "");
-  const idEnv = String(cfg.identifierEnv ?? "BLUESKY_IDENTIFIER");
-  const pwEnv = String(cfg.passwordEnv ?? "BLUESKY_APP_PASSWORD");
+export function bluesky(name: string, cfg: BlueskyChannelConfig, deps: AdapterDeps): Adapter {
+  const service = cfg.service.replace(/\/$/, "");
+  const idEnv = cfg.identifierEnv;
+  const pwEnv = cfg.passwordEnv;
 
   return {
     async publish({ text, image }: PublishInput): Promise<PublishResult> {
@@ -46,11 +46,11 @@ export function bluesky(name: string, cfg: ChannelConfig, deps: AdapterDeps): Ad
 
       const session = (await (
         await expectOk(
-          await deps.fetch(`${service}/xrpc/com.atproto.server.createSession`, {
+            await fetchWithTimeout(deps, `${service}/xrpc/com.atproto.server.createSession`, {
             method: "POST",
             headers: json,
             body: JSON.stringify({ identifier, password }),
-          }),
+            }, `${name}: login`),
           `${name}: login`,
         )
       ).json()) as { accessJwt: string; did: string; handle: string };
@@ -60,7 +60,7 @@ export function bluesky(name: string, cfg: ChannelConfig, deps: AdapterDeps): Ad
         $type: "app.bsky.feed.post",
         text,
         createdAt: new Date().toISOString(),
-        langs: [String(cfg.lang ?? "en")],
+          langs: [cfg.lang],
       };
       const facets = facetsFor(text);
       if (facets.length) record.facets = facets;
@@ -73,11 +73,11 @@ export function bluesky(name: string, cfg: ChannelConfig, deps: AdapterDeps): Ad
         }
         const up = (await (
           await expectOk(
-            await deps.fetch(`${service}/xrpc/com.atproto.repo.uploadBlob`, {
+              await fetchWithTimeout(deps, `${service}/xrpc/com.atproto.repo.uploadBlob`, {
               method: "POST",
               headers: { ...auth, "Content-Type": image.mime },
               body: new Uint8Array(image.bytes),
-            }),
+              }, `${name}: image upload`),
             `${name}: image upload`,
           )
         ).json()) as { blob: unknown };
@@ -95,11 +95,11 @@ export function bluesky(name: string, cfg: ChannelConfig, deps: AdapterDeps): Ad
 
       const created = (await (
         await expectOk(
-          await deps.fetch(`${service}/xrpc/com.atproto.repo.createRecord`, {
+            await fetchWithTimeout(deps, `${service}/xrpc/com.atproto.repo.createRecord`, {
             method: "POST",
             headers: { ...auth, ...json },
             body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.post", record }),
-          }),
+            }, `${name}: create post`),
           `${name}: create post`,
         )
       ).json()) as { uri: string };

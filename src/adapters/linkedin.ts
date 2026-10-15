@@ -1,12 +1,12 @@
 import type { Adapter, AdapterDeps, PublishInput, PublishResult } from "./types.js";
-import { expectOk, PublishError, requireEnv } from "./types.js";
-import type { ChannelConfig } from "../config.js";
+import { expectOk, fetchWithTimeout, PublishError, requireEnv } from "./types.js";
+import type { LinkedInChannelConfig } from "../config.js";
 import { HASHTAG_RE } from "../text.js";
 
 const API = "https://api.linkedin.com/rest";
 // LinkedIn versions its REST API monthly and retires versions after about a
 // year. Override with `version:` in the channel config when this goes stale.
-export const DEFAULT_LINKEDIN_VERSION = "202509";
+export const DEFAULT_LINKEDIN_VERSION = "202609";
 
 const RESERVED = /[\\|{}@[\]()<>#*_~]/g;
 
@@ -24,13 +24,13 @@ export function toLittleText(text: string): string {
   return out;
 }
 
-export function linkedin(name: string, cfg: ChannelConfig, deps: AdapterDeps): Adapter {
-  const org = cfg.organization as string | undefined;
-  const person = cfg.person as string | undefined;
+export function linkedin(name: string, cfg: LinkedInChannelConfig, deps: AdapterDeps): Adapter {
+  const org = cfg.organization;
+  const person = cfg.person;
   if (!org && !person) throw new PublishError(`${name}: set "organization" (page ID) or "person"`);
   const author = org ? `urn:li:organization:${org}` : `urn:li:person:${person}`;
-  const version = String(cfg.version ?? DEFAULT_LINKEDIN_VERSION);
-  const tokenEnv = String(cfg.tokenEnv ?? "LINKEDIN_ACCESS_TOKEN");
+  const version = cfg.version ?? DEFAULT_LINKEDIN_VERSION;
+  const tokenEnv = cfg.tokenEnv ?? "LINKEDIN_ACCESS_TOKEN";
 
   return {
     async publish({ text, image }: PublishInput): Promise<PublishResult> {
@@ -45,20 +45,20 @@ export function linkedin(name: string, cfg: ChannelConfig, deps: AdapterDeps): A
       let media: { id: string; altText?: string } | undefined;
       if (image) {
         const init = await expectOk(
-          await deps.fetch(`${API}/images?action=initializeUpload`, {
+            await fetchWithTimeout(deps, `${API}/images?action=initializeUpload`, {
             method: "POST",
             headers,
             body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
-          }),
+            }, `${name}: image upload init`),
           `${name}: image upload init`,
         );
         const { value } = (await init.json()) as { value: { uploadUrl: string; image: string } };
         await expectOk(
-          await deps.fetch(value.uploadUrl, {
+            await fetchWithTimeout(deps, value.uploadUrl, {
             method: "PUT",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": image.mime },
             body: new Uint8Array(image.bytes),
-          }),
+            }, `${name}: image upload`),
           `${name}: image upload`,
         );
         media = { id: value.image, altText: image.alt.slice(0, 4086) };
@@ -74,7 +74,7 @@ export function linkedin(name: string, cfg: ChannelConfig, deps: AdapterDeps): A
         ...(media ? { content: { media } } : {}),
       };
       const res = await expectOk(
-        await deps.fetch(`${API}/posts`, { method: "POST", headers, body: JSON.stringify(body) }),
+          await fetchWithTimeout(deps, `${API}/posts`, { method: "POST", headers, body: JSON.stringify(body) }, `${name}: create post`),
         `${name}: create post`,
       );
       const id = res.headers.get("x-restli-id") ?? res.headers.get("x-linkedin-id") ?? "";
