@@ -87,6 +87,66 @@ Most teams treat flakes as noise. Retry, get a green build, move on...
 The body is the post. `card` describes the image. `variants` overrides the text per
 channel. Full reference in [docs/guides/content-format.md](docs/guides/content-format.md).
 
+## Design and publishing
+
+Yes. Postline includes both the visual design system and the publishing process.
+
+For design, it can:
+
+- Generate branded image cards automatically.
+- Apply your logo, colours, typography, spacing, footer, labels and status chips.
+- Render rows, grid and statement layouts.
+- Produce square, portrait or landscape images.
+- Generate the final PNG or JPEG using Chromium.
+- Attach that image when publishing to supported channels.
+
+You control the appearance through `postline.config.yaml` and each post's `card`
+section. For example:
+
+```yaml
+card:
+  layout: rows
+  eyebrow: Product update
+  headline:
+    - What changed this week
+  items:
+    - title: Faster publishing
+      note: No GitHub Actions required
+      chip: shipped
+  footer: postline
+```
+
+Postline then handles the rest:
+
+1. Reads the post and design instructions.
+2. Checks the content and channel rules.
+3. Renders the branded card.
+4. Publishes the text and image at the scheduled time.
+5. Records the outcome in its ledger.
+
+The important distinction is that Postline is a configurable design renderer,
+not currently an AI designer. It reliably produces designs from the layouts and
+brand system you define, but it does not independently invent a completely new
+visual composition for every post.
+
+### The design pipeline
+
+```text
+postline.config.yaml + post Markdown
+  -> parse and validate the brand, card and channel settings
+  -> lint the text, links, schedule and card content
+  -> combine the selected layout with brand colours, font, logo and chip tones
+  -> escape post content and embed local logo and font assets in card HTML
+  -> hash the HTML and render settings, reusing an unchanged cached card
+  -> open the exact square, portrait or landscape viewport in Chromium
+  -> wait for the page and fonts, then capture the final PNG or JPEG
+  -> upload the text and image through the selected channel adapter
+  -> record the attempt and remote result in the publishing ledger
+```
+
+The generated HTML can also be kept with `postline render --html`, which makes
+layout and brand adjustments easier to inspect in a browser before publishing.
+
 ## Commands
 
 | Command | What it does |
