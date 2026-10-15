@@ -5,8 +5,9 @@ Plan, render and publish branded social posts from a git repo.
 postline treats a content calendar like code. Each post is a Markdown file with a
 small block of front matter. postline checks it against your house rules, renders
 an on-brand image card for it, and publishes it to LinkedIn, Bluesky, Mastodon or
-any webhook when its time comes. A scheduled GitHub Actions job does the sending,
-and a ledger committed back to the repo records what went where.
+any webhook when its time comes. Run its built-in daemon on your own computer or
+server, use your operating system's scheduler, or opt into GitHub Actions. A
+durable ledger records what went where.
 
 <p>
   <img src="docs/images/rows-dark.png" width="32%" alt="Dark card with three numbered rows and status chips">
@@ -30,17 +31,27 @@ out, or the same posts on three networks. postline gives you:
 ## Quick start
 
 ```sh
-npx postline init my-content
+npm install --global https://github.com/1cbyc/postline/releases/download/v2026.0.1.0/postline-0.1.0.tgz
+postline init my-content
 cd my-content
 npx playwright-core install chromium   # once, for rendering cards
-npx postline plan                      # draft files for next week's empty slots
-npx postline render                    # cards land in out/cards/
-npx postline lint
-npx postline publish --dry-run
+postline plan                           # draft files for next week's empty slots
+postline render                         # cards land in out/cards/
+postline lint
+postline publish --dry-run
 ```
 
-Then push the repo to GitHub, add your tokens as Actions secrets, and the bundled
-workflow publishes every 15 minutes.
+To publish without GitHub Actions or usage credits, keep the project on an always-on
+computer or server and run:
+
+```sh
+postline daemon --every 15
+```
+
+It checks immediately and every 15 minutes after that. See
+[self-hosted scheduling](docs/guides/self-hosted-scheduling.md) for systemd and
+other persistent setups. The bundled GitHub workflow remains available if you
+prefer it.
 
 ## A post
 
@@ -87,6 +98,7 @@ channel. Full reference in [docs/guides/content-format.md](docs/guides/content-f
 | `postline lint` | Check every post; exits non-zero on errors |
 | `postline render [id] [--force] [--html]` | Render cards to `out/cards/` |
 | `postline publish [--dry-run] [--now ISO] [--catch-up] [--only ID]` | Send everything that is due; CI also uses its two-phase prepare/resume flags |
+| `postline daemon [--every MINUTES]` | Publish continuously on an always-on machine, without GitHub Actions |
 | `postline retry <id> <channel>` | Clear a failed or stuck entry so it sends again |
 | `postline mark <id> <channel> <published\|skipped>` | Record an outcome by hand |
 
@@ -108,7 +120,8 @@ Setup for each, including tokens: [docs/guides/channels.md](docs/guides/channels
 - [Configuration](docs/guides/configuration.md)
 - [Content format](docs/guides/content-format.md)
 - [Channels](docs/guides/channels.md)
-- [Scheduling with GitHub Actions](docs/guides/scheduling.md)
+- [Scheduling options](docs/guides/scheduling.md)
+- [Self-hosted scheduling without GitHub Actions](docs/guides/self-hosted-scheduling.md)
 - [Architecture decisions](docs/architecture/README.md)
 
 ## Examples

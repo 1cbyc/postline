@@ -6,7 +6,8 @@ turning on scheduled publishing.
 ## 1. Create the project
 
 ```sh
-npx postline init acme-content
+npm install --global https://github.com/1cbyc/postline/releases/download/v2026.0.1.0/postline-0.1.0.tgz
+postline init acme-content
 cd acme-content
 git init
 ```
@@ -30,7 +31,7 @@ Render the sample to check:
 
 ```sh
 npx playwright-core install chromium
-npx postline render --html
+postline render --html
 ```
 
 Open `out/cards/welcome.png`. The `--html` flag also writes `welcome.html`, which
@@ -60,7 +61,12 @@ recent topics in one page, which is useful when someone else writes the copy.
 Try it locally first:
 
 ```sh
-npx postline publish --dry-run --now 2026-10-27T13:05:00Z
+postline publish --dry-run --now 2026-10-27T13:05:00Z
 ```
 
-Then follow [scheduling.md](scheduling.md) to let GitHub Actions send posts on time.
+Then choose a runner in [scheduling.md](scheduling.md). The simplest no-credit
+option on an always-on machine is:
+
+```sh
+postline daemon --every 15
+```

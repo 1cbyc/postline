@@ -1,0 +1,17 @@
+[Unit]
+Description=Postline social publishing daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/ABSOLUTE/PATH/TO/CONTENT/PROJECT
+EnvironmentFile=/ABSOLUTE/PATH/TO/postline.env
+ExecStart=/ABSOLUTE/PATH/TO/postline daemon --every 15
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

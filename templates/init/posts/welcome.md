@@ -14,7 +14,7 @@ card:
     - title: Describe the card up here
       note: postline renders it in your brand
     - title: Set status to ready
-      note: CI publishes it when the time comes
+      note: Your chosen scheduler publishes it when the time comes
   footer: Edit postline.config.yaml to change the look.
 ---
 

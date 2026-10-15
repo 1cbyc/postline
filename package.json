@@ -27,7 +27,11 @@
   "files": [
     "dist/src",
     "templates",
+    "docs/architecture",
+    "docs/guides",
+    "CHANGELOG.md",
     "README.md",
+    "SECURITY.md",
     "LICENSE"
   ],
   "engines": {

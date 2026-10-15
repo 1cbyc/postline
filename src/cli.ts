@@ -11,6 +11,7 @@ import { Renderer } from "./render/png.js";
 import { publishDue } from "./publish.js";
 import { brief } from "./brief.js";
 import { localDate } from "./time.js";
+import { runDaemon } from "./daemon.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..", "..");
@@ -29,6 +30,7 @@ Commands
   publish [--dry-run]      send posts whose time has come
           [--now ISO] [--catch-up] [--only ID]
           [--prepare-only | --resume-prepared]
+  daemon [--every MINUTES] keep publishing on a persistent machine (default: 15)
   retry <id> <channel>     clear a stuck or failed entry so it sends again
   mark <id> <channel> <published|skipped> [--url URL]
                            record the outcome yourself (e.g. a stuck post that did go out)
@@ -86,6 +88,40 @@ const yellow = paint(33);
 const green = paint(32);
 const dim = paint(2);
 
+async function publishCommand(cwd: string, configFile: string | undefined, args: Args): Promise<number> {
+  const cfg = loadConfig(cwd, configFile);
+  const posts = loadPosts(cfg);
+  const nowFlag = str(args, "now");
+  const now = nowFlag ? new Date(nowFlag) : new Date();
+  if (Number.isNaN(now.getTime())) throw new ConfigError(`--now "${nowFlag}" is not a date`);
+  const prepareOnly = Boolean(args.flags["prepare-only"]);
+  const resumePrepared = Boolean(args.flags["resume-prepared"]);
+  if (prepareOnly && resumePrepared) throw new ConfigError("--prepare-only and --resume-prepared cannot be used together");
+  if (Boolean(args.flags["dry-run"]) && (prepareOnly || resumePrepared)) {
+    throw new ConfigError("--dry-run cannot be combined with --prepare-only or --resume-prepared");
+  }
+  const ledger = new Ledger(cfg.stateDir);
+  let renderer: Renderer | undefined;
+  const only = str(args, "only");
+  try {
+    const outcomes = await publishDue(cfg, posts, ledger, {
+      now,
+      dryRun: Boolean(args.flags["dry-run"]),
+      catchUp: Boolean(args.flags["catch-up"]),
+      prepareOnly,
+      resumePrepared,
+      ...(only === undefined ? {} : { only }),
+      deps: { env: process.env, fetch: globalThis.fetch, root: cfg.root, requestTimeoutMs: cfg.publish.requestTimeoutMs },
+      renderer: () => (renderer ??= new Renderer(cfg)),
+      log: (line) => console.log(line),
+    });
+    if (outcomes.length === 0) console.log(`nothing due at ${now.toISOString()} (${localDate(now, cfg.timezone)} ${cfg.timezone})`);
+    return outcomes.some((outcome) => outcome.result === "failed" || outcome.result === "blocked") ? 1 : 0;
+  } finally {
+    await renderer?.close();
+  }
+}
+
 async function main(argv: string[]): Promise<number> {
   // Boolean flags shouldn't swallow the next positional argument.
   const args = parseArgs(argv);
@@ -123,8 +159,41 @@ async function main(argv: string[]): Promise<number> {
     }
     console.log(`created a postline project in ${target}`);
     console.log("next: edit postline.config.yaml, then run `postline plan` and `postline render`");
+    console.log("schedule without GitHub Actions: `postline daemon --every 15`");
     return 0;
   }
+
+  if (cmd === "daemon") {
+    const everyFlag = str(args, "every") ?? "15";
+    const everyMinutes = Number(everyFlag);
+    if (!Number.isSafeInteger(everyMinutes) || everyMinutes < 1 || everyMinutes > 1_440) {
+      throw new ConfigError(`--every "${everyFlag}" must be a whole number from 1 to 1440 minutes`);
+    }
+    if (args.flags["prepare-only"] || args.flags["resume-prepared"] || args.flags["dry-run"] || str(args, "now")) {
+      throw new ConfigError("daemon cannot be combined with --prepare-only, --resume-prepared, --dry-run or --now");
+    }
+    const controller = new AbortController();
+    const stop = (): void => controller.abort();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    console.log(`postline daemon started; checking every ${everyMinutes} minute${everyMinutes === 1 ? "" : "s"}`);
+    try {
+      await runDaemon({
+        intervalMs: Math.round(everyMinutes * 60_000),
+        signal: controller.signal,
+        task: () => publishCommand(cwd, str(args, "config"), args),
+        log: (line) => console.log(line),
+        error: (line) => console.error(red(line)),
+      });
+    } finally {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+    }
+    console.log("postline daemon stopped");
+    return 0;
+  }
+
+  if (cmd === "publish") return publishCommand(cwd, str(args, "config"), args);
 
   const cfg = loadConfig(cwd, str(args, "config"));
   const posts = loadPosts(cfg);
@@ -197,38 +266,6 @@ async function main(argv: string[]): Promise<number> {
         await r.close();
       }
       return 0;
-    }
-
-    case "publish": {
-      const nowFlag = str(args, "now");
-      const now = nowFlag ? new Date(nowFlag) : new Date();
-      if (Number.isNaN(now.getTime())) throw new ConfigError(`--now "${nowFlag}" is not a date`);
-      const prepareOnly = Boolean(args.flags["prepare-only"]);
-      const resumePrepared = Boolean(args.flags["resume-prepared"]);
-      if (prepareOnly && resumePrepared) throw new ConfigError("--prepare-only and --resume-prepared cannot be used together");
-      if (Boolean(args.flags["dry-run"]) && (prepareOnly || resumePrepared)) {
-        throw new ConfigError("--dry-run cannot be combined with --prepare-only or --resume-prepared");
-      }
-      const ledger = new Ledger(cfg.stateDir);
-      let renderer: Renderer | undefined;
-      const only = str(args, "only");
-      try {
-        const outcomes = await publishDue(cfg, posts, ledger, {
-          now,
-          dryRun: Boolean(args.flags["dry-run"]),
-          catchUp: Boolean(args.flags["catch-up"]),
-          prepareOnly,
-          resumePrepared,
-          ...(only === undefined ? {} : { only }),
-          deps: { env: process.env, fetch: globalThis.fetch, root: cfg.root, requestTimeoutMs: cfg.publish.requestTimeoutMs },
-          renderer: () => (renderer ??= new Renderer(cfg)),
-          log: (l) => console.log(l),
-        });
-        if (outcomes.length === 0) console.log(`nothing due at ${now.toISOString()} (${localDate(now, cfg.timezone)} ${cfg.timezone})`);
-        return outcomes.some((o) => o.result === "failed" || o.result === "blocked") ? 1 : 0;
-      } finally {
-        await renderer?.close();
-      }
     }
 
     case "retry": {

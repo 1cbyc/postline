@@ -1,4 +1,21 @@
-# Scheduling with GitHub Actions
+# Scheduling
+
+GitHub Actions is optional. Postline is a one-shot CLI with a built-in daemon, so
+publishing can run on your laptop, a small VPS, a home server, a container, or any
+job scheduler. No GitHub Actions minutes or credits are required.
+
+## Choose a runner
+
+- **Persistent machine:** run `postline daemon --every 15`. This is the simplest
+  option and never overlaps its own publishing checks.
+- **Operating-system service:** use systemd, launchd, cron, or Task Scheduler. See
+  [self-hosted scheduling](self-hosted-scheduling.md).
+- **GitHub Actions:** use the workflow created by `postline init` if Actions is
+  available for the repository.
+- **Another CI provider:** run the same one-shot or two-phase commands described
+  below.
+
+## GitHub Actions
 
 postline doesn't run a server. A workflow wakes up every 15 minutes and publishes
 in two phases. It first records every due delivery as `attempting`, signs and pushes
@@ -60,11 +77,11 @@ three days of posts in a row. Use `postline publish --catch-up` to send them any
 The same workflow runs `postline lint` on pull requests, so a post with a broken
 link domain or too many hashtags can't be merged without someone noticing.
 
-## Without GitHub
+## Other stateless schedulers
 
-Any scheduler works: cron on a VPS, a Kubernetes CronJob, GitLab CI. Run
-`postline publish` from the project directory and keep `.postline/` on disk between
-runs (or commit it, as the GitHub workflow does).
+Any scheduler works: a Kubernetes CronJob, GitLab CI, CircleCI, or another hosted
+runner. Run `postline publish` from the project directory and keep `.postline/` on
+disk between runs (or commit it, as the GitHub workflow does).
 
 For a scheduler whose filesystem disappears between commands, use the same durable
 two-phase sequence as the bundled workflow: `publish --prepare-only`, persist the

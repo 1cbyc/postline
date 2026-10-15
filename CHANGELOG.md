@@ -8,4 +8,5 @@ First release.
 - Card layouts: rows, grid, statement; square, landscape and portrait sizes
 - Channels: LinkedIn, Bluesky, Mastodon, webhook, files
 - Ledger with at-most-once delivery and late-post skipping
-- GitHub Actions workflow template
+- Built-in `daemon` for scheduling without GitHub Actions or usage credits
+- GitHub Actions and systemd workflow templates

@@ -37,7 +37,8 @@ automatic duplicate. The trade-off is two small commits for a run that publishes
 plus one-time signing-key setup for scheduled workflows.
 
 Persistent local schedulers may keep using the one-step `publish` command because
-the ledger is durable between processes.
+the ledger is durable between processes. The built-in `daemon` uses that path,
+reloads the project before each serial check, and requires no hosted CI service.
 
 ## Revisit Trigger
 
