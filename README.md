@@ -86,7 +86,7 @@ channel. Full reference in [docs/guides/content-format.md](docs/guides/content-f
 | `postline brief [--week DATE]` | Print a Markdown writing brief: open slots, rules, recent topics |
 | `postline lint` | Check every post; exits non-zero on errors |
 | `postline render [id] [--force] [--html]` | Render cards to `out/cards/` |
-| `postline publish [--dry-run] [--now ISO] [--catch-up] [--only ID]` | Send everything that is due |
+| `postline publish [--dry-run] [--now ISO] [--catch-up] [--only ID]` | Send everything that is due; CI also uses its two-phase prepare/resume flags |
 | `postline retry <id> <channel>` | Clear a failed or stuck entry so it sends again |
 | `postline mark <id> <channel> <published\|skipped>` | Record an outcome by hand |
 
