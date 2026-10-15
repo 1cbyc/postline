@@ -1,0 +1,47 @@
+# Oakcrumb is a made-up neighbourhood bakery. Same tool, light theme,
+# Instagram-style square cards, Mastodon plus a webhook into Zapier.
+brand:
+  name: Oakcrumb Bakery
+  url: oakcrumb.example
+  logo: assets/logo.svg
+  font:
+    family: Fraunces
+    url: https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&display=block
+  colors:
+    background: "#f6efe4"
+    panel: "#fffaf2"
+    border: "#e3d5c0"
+    text: "#3b2a1e"
+    muted: "#7d6a58"
+    accent: "#c2602b"
+    ok: ["#9cc5a1", "#24533a"]
+    warn: ["#f0cf8a", "#6b4a00"]
+    bad: ["#eaa59a", "#7a2418"]
+  chips:
+    today: ok
+    "sold out": bad
+    "pre-order": warn
+
+timezone: Europe/London
+
+schedule:
+  weekStartsOn: mon
+  days: [mon, wed, fri, sat]
+  times: ["07:30"]
+
+card:
+  size: square
+
+channels:
+  mastodon:
+    type: mastodon
+    instance: https://mastodon.social
+  instagram-via-zapier:
+    type: webhook
+    url: https://hooks.zapier.com/hooks/catch/000000/abcdef/
+
+rules:
+  maxHashtags: 5
+  allowEmoji: true
+  hookMaxChars: 100
+  requireImage: true

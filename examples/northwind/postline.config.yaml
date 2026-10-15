@@ -1,0 +1,57 @@
+# Northwind is a made-up developer-tools company used to show a full setup.
+brand:
+  name: Northwind
+  url: northwind.dev
+  logo: assets/logo.svg
+  font:
+    family: Manrope
+    url: https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=block
+  colors:
+    background: "#0e1216"
+    panel: "#151b21"
+    border: "#26303a"
+    text: "#edf1f4"
+    muted: "#93a0ab"
+    accent: "#4fd1c5"
+    ok: ["#1f6f4a", "#7fd3a5"]
+    warn: ["#8a5a10", "#f0c46a"]
+    bad: ["#a83a2c", "#f3907f"]
+  chips:
+    passing: ok
+    flaky: warn
+    failing: bad
+
+timezone: America/New_York
+
+schedule:
+  weekStartsOn: tue
+  days: [mon, tue, wed, thu, fri, sat, sun]
+  times: ["09:00", "15:00", "21:00"]
+
+card:
+  size: square
+  format: png
+  scale: 2
+
+publish:
+  lateMinutes: 180
+  maxAttempts: 3
+
+channels:
+  linkedin:
+    type: linkedin
+    organization: "00000000"
+  bluesky:
+    type: bluesky
+  blog-archive:
+    type: files
+    dir: archive
+
+rules:
+  maxHashtags: 2
+  allowEmoji: false
+  allowedLinkDomains: [northwind.dev]
+  hookMaxChars: 120
+  requireImage: true
+  topicCooldownDays: 14
+  bannedPhrases: ["game-changer", "revolutionize", "in today's fast-paced world"]
