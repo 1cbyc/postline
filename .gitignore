@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# local working notes, talks, personal runbooks. never pushed.
+docs/operations/*
+!docs/operations/.gitkeep
+examples/*/.postline/

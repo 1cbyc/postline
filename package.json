@@ -1,0 +1,52 @@
+{
+  "name": "postline",
+  "version": "0.1.0",
+  "description": "Plan, render and publish branded social posts from a git repo.",
+  "license": "MIT",
+  "author": "Isaac Emmanuel <ei@nsisong.com> (https://nsisong.com)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1cbyc/postline.git"
+  },
+  "homepage": "https://github.com/1cbyc/postline#readme",
+  "bugs": "https://github.com/1cbyc/postline/issues",
+  "keywords": [
+    "social-media",
+    "linkedin",
+    "bluesky",
+    "mastodon",
+    "content-calendar",
+    "scheduling",
+    "marketing",
+    "cli"
+  ],
+  "type": "module",
+  "bin": {
+    "postline": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "lint:types": "tsc -p tsconfig.json --noEmit",
+    "example:lint": "node dist/src/cli.js lint --cwd examples/northwind",
+    "example:render": "node dist/src/cli.js render --cwd examples/northwind",
+    "prepublishOnly": "npm test"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  }
+}
