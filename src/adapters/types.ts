@@ -40,13 +40,24 @@ export async function fetchWithTimeout(
   what: string,
 ): Promise<Response> {
   const timeoutMs = deps.requestTimeoutMs ?? 30_000;
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const callerSignal = init?.signal;
+  const abortFromCaller = (): void => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) abortFromCaller();
+  else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
   try {
-    return await deps.fetch(input, { ...init, signal });
+    return await deps.fetch(input, { ...init, signal: controller.signal });
   } catch (error) {
-    if (timeoutSignal.aborted) throw new PublishError(`${what} timed out after ${timeoutMs} ms`);
+    if (timedOut) throw new PublishError(`${what} timed out after ${timeoutMs} ms`);
     throw error;
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
