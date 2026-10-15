@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
   pull_request:
 
-# One publish run at a time, so two runs can never send the same post.
 concurrency:
   group: postline-publish
   cancel-in-progress: false
@@ -19,33 +18,83 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: npx --yes postline@0 lint
+      - run: npx --yes postline@0.1.0 lint
 
   publish:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    env:
+      POSTLINE_GPG_PRIVATE_KEY: ${{ secrets.POSTLINE_GPG_PRIVATE_KEY }}
+      POSTLINE_GPG_PASSPHRASE: ${{ secrets.POSTLINE_GPG_PASSPHRASE }}
+      POSTLINE_GPG_KEY_ID: ${{ secrets.POSTLINE_GPG_KEY_ID }}
+      POSTLINE_GIT_NAME: ${{ secrets.POSTLINE_GIT_NAME }}
+      POSTLINE_GIT_EMAIL: ${{ secrets.POSTLINE_GIT_EMAIL }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: npx --yes playwright-core install --with-deps chromium
-      - name: publish due posts
-        run: npx --yes postline@0 publish
+
+      - name: configure signed ledger commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${POSTLINE_GPG_PRIVATE_KEY:?add POSTLINE_GPG_PRIVATE_KEY as an Actions secret}"
+          : "${POSTLINE_GPG_KEY_ID:?add POSTLINE_GPG_KEY_ID as an Actions secret}"
+          : "${POSTLINE_GIT_NAME:?add POSTLINE_GIT_NAME as an Actions secret}"
+          : "${POSTLINE_GIT_EMAIL:?add POSTLINE_GIT_EMAIL as an Actions secret}"
+          printf '%s' "$POSTLINE_GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%s\n' '#!/bin/sh' 'exec gpg --batch --yes --pinentry-mode loopback --passphrase "$POSTLINE_GPG_PASSPHRASE" "$@"' > "$RUNNER_TEMP/postline-gpg"
+          chmod 700 "$RUNNER_TEMP/postline-gpg"
+          git config user.name "$POSTLINE_GIT_NAME"
+          git config user.email "$POSTLINE_GIT_EMAIL"
+          git config user.signingkey "$POSTLINE_GPG_KEY_ID"
+          git config gpg.program "$RUNNER_TEMP/postline-gpg"
+          git config commit.gpgsign true
+
+      - name: prepare delivery ledger
+        run: npx --yes postline@0.1.0 publish --prepare-only
+
+      - name: persist prepared ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .postline/ledger.json ]; then exit 0; fi
+          git add -- .postline/ledger.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -S -m "postline: prepare deliveries" -m "Co-authored-by: insisong <emmanuelisaacnsisong@gmail.com>"
+          git verify-commit HEAD
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git verify-commit HEAD
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - run: npx --yes playwright-core@1.64.1 install --with-deps chromium
+
+      - name: publish prepared posts
+        run: npx --yes postline@0.1.0 publish --resume-prepared
         env:
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
           BLUESKY_IDENTIFIER: ${{ secrets.BLUESKY_IDENTIFIER }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
           MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
           POSTLINE_WEBHOOK_SECRET: ${{ secrets.POSTLINE_WEBHOOK_SECRET }}
-      - name: commit ledger
+
+      - name: persist delivery outcomes
         if: always()
+        shell: bash
         run: |
-          git config user.name "postline"
-          git config user.email "postline@users.noreply.github.com"
-          git add .postline
-          git diff --cached --quiet || (git commit -m "postline: update ledger" && git push)
+          set -euo pipefail
+          if [ ! -f .postline/ledger.json ]; then exit 0; fi
+          git add -- .postline/ledger.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -S -m "postline: record delivery outcomes" -m "Co-authored-by: insisong <emmanuelisaacnsisong@gmail.com>"
+          git verify-commit HEAD
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git verify-commit HEAD
+          git push origin "HEAD:$GITHUB_REF_NAME"

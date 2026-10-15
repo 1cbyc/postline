@@ -8,6 +8,5 @@ out/
 .DS_Store
 
 # local working notes, talks, personal runbooks. never pushed.
-docs/operations/*
-!docs/operations/.gitkeep
+docs/operations/
 examples/*/.postline/
