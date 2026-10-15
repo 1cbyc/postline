@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node dist/src/cli.js lint --cwd examples/northwind
+      - run: node dist/src/cli.js lint --cwd examples/oakcrumb
+
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - run: npx playwright-core install --with-deps chromium
+      - run: node dist/src/cli.js render --cwd examples/northwind
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-cards
+          path: examples/northwind/out/cards/
