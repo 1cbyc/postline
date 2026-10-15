@@ -14,6 +14,7 @@ superseded ones stay, marked as such.
 | [006](adr-006-channel-scope.md) | Three native channels, a webhook for the rest |
 | [007](adr-007-postline-does-not-write-copy.md) | postline does not write copy |
 | [008](adr-008-lint-gates-publishing.md) | Lint gates publishing |
+| [009](adr-009-durable-signed-publish-transitions.md) | Persist signed delivery intent before network calls |
 
 ## Format
 

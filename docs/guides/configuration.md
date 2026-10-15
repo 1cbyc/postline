@@ -38,7 +38,7 @@ schedule:
 
 postsDir: posts
 outDir: out                  # rendered cards
-stateDir: .postline          # ledger and render cache; commit this
+stateDir: .postline          # commit ledger.json; cards.json is a local render cache
 
 card:
   size: square               # square 1200x1200, landscape 1200x627, portrait 1080x1350
@@ -49,6 +49,7 @@ card:
 publish:
   lateMinutes: 180           # skip posts this far past their slot
   maxAttempts: 3             # stop retrying a failing channel after this
+  requestTimeoutMs: 30000    # bound every external API request
 
 channels: {}                 # see channels.md
 
@@ -73,3 +74,7 @@ font and use `font.file`; it is embedded into the card HTML.
 Secrets never go in the config file. Each channel reads its token from an
 environment variable (see [channels.md](channels.md)). `POSTLINE_CHROMIUM` points
 rendering at a specific Chromium binary. `NO_COLOR` turns off coloured output.
+
+Configuration is validated before any command runs. Invalid dates, unknown status
+values, unsafe post IDs, malformed URLs and out-of-range numeric settings fail
+closed rather than being coerced into a publishable value.

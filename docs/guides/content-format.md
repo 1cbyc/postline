@@ -10,7 +10,7 @@ at: 2026-10-27 09:00         # local time in the configured timezone
 status: ready                # ready (default) or draft
 channels: [linkedin]         # defaults to every configured channel
 topic: launch                # used by the repeat-topic check and the brief
-image: ../assets/photo.jpg   # use your own image instead of a card
+image: ../assets/photo.jpg   # PNG or JPEG inside the project root
 alt: Team photo at the offsite
 card: { ... }                # see below
 variants:
@@ -25,6 +25,11 @@ The post body, exactly as it should appear.
 Plain text. Line breaks are kept. Hashtags written as `#Word` become proper hashtags
 on LinkedIn and Bluesky. Links can be full URLs or bare domains with a path
 (`acme.com/blog/post`); a bare domain with no path is left as text.
+
+`id` values are also used for safe output filenames. They must begin with a letter
+or number and may contain only letters, numbers, dots, underscores and hyphens.
+Unknown `status` values are errors and are treated as drafts, never as ready posts.
+Rules such as hashtag and hook limits apply to the final per-channel variant.
 
 ## Cards
 

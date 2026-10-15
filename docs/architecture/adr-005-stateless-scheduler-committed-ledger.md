@@ -25,6 +25,9 @@ not retry it; a human checks the network and runs `postline mark` or
 Posts more than `publish.lateMinutes` past due are skipped unless `--catch-up`.
 Mastodon calls also carry an idempotency key.
 
+On disposable CI runners, ADR-009 makes the pre-call transition durable with a
+signed Git commit before any network request is allowed to begin.
+
 ## Consequences
 
 No server, no database, history is reviewable in git, and a crash can never cause a

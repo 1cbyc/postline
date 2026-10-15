@@ -16,7 +16,8 @@ web fonts) hard. Browser text rendering already solves all of that.
 Build each card as a self-contained HTML page from the brand config and the post's
 `card` block, then screenshot it with headless Chromium through `playwright-core`.
 Three layouts cover most posts: rows, grid and statement. All text is HTML-escaped
-and the page declares UTF-8. Renders are cached by a hash of the HTML.
+and the page declares UTF-8. Image and SVG assets are embedded as non-executable
+data URLs. Renders are cached by a hash of the HTML.
 
 ## Consequences
 

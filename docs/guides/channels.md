@@ -24,7 +24,7 @@ linkedin:
   type: linkedin
   organization: "111614509"   # the number in linkedin.com/company/<id>/admin
   # person: "<member id>"     # post as a member instead
-  # version: "202509"         # LinkedIn-Version header (YYYYMM)
+  # version: "202609"         # LinkedIn-Version header (YYYYMM)
   # tokenEnv: LINKEDIN_ACCESS_TOKEN
 ```
 
@@ -36,8 +36,9 @@ company pages (scope `w_organization_social`), or "Share on LinkedIn" for a memb
 LinkedIn tokens expire (60 days by default). Put a reminder in your calendar or
 automate the refresh flow; postline will fail loudly when the token stops working.
 
-LinkedIn retires API versions roughly a year after release. If you see
-`HTTP 426` or a version error, set `version:` to a recent month.
+LinkedIn retires API versions roughly a year after release. postline 0.1.0 defaults
+to the September 2026 API (`202609`). Check [LinkedIn's versioning page](https://learn.microsoft.com/en-us/linkedin/marketing/versioning)
+before each postline release and update `version:` when migrating deliberately.
 
 ## Bluesky
 
