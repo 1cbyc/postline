@@ -1,7 +1,7 @@
 # Security
 
 postline handles social media tokens, so please report vulnerabilities privately:
-open a GitHub security advisory on this repository, or email isaacnsisong@gmail.com.
+open a GitHub security advisory on this repository, or email ei@nsisong.com.
 I aim to reply within a few days.
 
 ## Notes for users
