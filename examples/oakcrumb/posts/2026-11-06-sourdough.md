@@ -20,7 +20,7 @@ card:
   footer: 14 Mill Lane. Cash and card.
 ---
 
-Saturday bake is set. Country sourdough, cardamom buns and a rye we're still a little bit obsessed with.
+Saturday bake is set: sourdough, cardamom buns and a rye we're still a little obsessed with.
 
 Pre-order buns by Friday 6pm to make sure you get some 🥐
 

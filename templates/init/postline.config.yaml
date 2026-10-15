@@ -2,7 +2,7 @@
 brand:
   name: Your Company
   url: example.com
-  logo: assets/logo.svg      # SVG (inlined) or PNG. White marks suit dark themes.
+  logo: assets/logo.svg      # SVG or PNG, embedded safely. White marks suit dark themes.
   font:
     family: Inter
     url: https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=block
