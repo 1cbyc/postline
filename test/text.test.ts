@@ -10,16 +10,16 @@ test("finds hashtags but not anchors or numbers", () => {
 });
 
 test("finds explicit links and bare domains with a path", () => {
-  const found = links("Read northwind.dev/blog/ci-22-to-6. Also https://example.com/a?b=1, and Node.js alone.");
+  const found = links("Read nsisong.com/blog/infrastructure-as-code. Also https://example.com/a?b=1, and Node.js alone.");
   assert.deepEqual(
     found.map((l) => l.url),
-    ["https://northwind.dev/blog/ci-22-to-6", "https://example.com/a?b=1"],
+    ["https://nsisong.com/blog/infrastructure-as-code", "https://example.com/a?b=1"],
   );
 });
 
 test("domain allow-list matches subdomains", () => {
-  assert.ok(hostAllowed("blog.northwind.dev", ["northwind.dev"]));
-  assert.ok(!hostAllowed("northwind.dev.evil.com", ["northwind.dev"]));
+  assert.ok(hostAllowed("blog.nsisong.com", ["nsisong.com"]));
+  assert.ok(!hostAllowed("nsisong.com.evil.com", ["nsisong.com"]));
 });
 
 test("detects mojibake from double-decoded UTF-8", () => {

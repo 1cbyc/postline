@@ -19,8 +19,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: node dist/src/cli.js lint --cwd examples/northwind
-      - run: node dist/src/cli.js lint --cwd examples/oakcrumb
+      - run: node dist/src/cli.js lint --cwd examples/nsisonglabs
+      - run: node dist/src/cli.js lint --cwd examples/nsisong
 
   render:
     runs-on: ubuntu-latest
@@ -32,8 +32,8 @@ jobs:
           cache: npm
       - run: npm ci && npm run build
       - run: npx playwright-core install --with-deps chromium
-      - run: node dist/src/cli.js render --cwd examples/northwind
+      - run: node dist/src/cli.js render --cwd examples/nsisonglabs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: example-cards
-          path: examples/northwind/out/cards/
+          path: examples/nsisonglabs/out/cards/

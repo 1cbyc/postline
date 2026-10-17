@@ -1,0 +1,50 @@
+# Nsisong Labs (nsisonglabs.com), the software studio behind postline.
+# Light theme in the studio's blue, LinkedIn page plus a Bluesky account.
+brand:
+  name: Nsisong Labs
+  url: nsisonglabs.com
+  logo: assets/logo.svg
+  font:
+    family: Space Grotesk
+    url: https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=block
+  colors:
+    background: "#ffffff"
+    panel: "#f4f7fd"
+    border: "#dbe3f6"
+    text: "#191a23"
+    muted: "#5b6070"
+    accent: "#1034a6"
+    ok: ["#cfe9da", "#1d5c3a"]
+    warn: ["#f6e2b3", "#6b4a00"]
+    bad: ["#f4cfc8", "#8a2a1b"]
+
+timezone: Africa/Lagos
+
+schedule:
+  weekStartsOn: mon
+  days: [mon, wed, fri]
+  times: ["09:00"]
+
+card:
+  size: square
+  format: png
+  scale: 2
+
+channels:
+  linkedin:
+    type: linkedin
+    organization: "REPLACE_WITH_PAGE_ID"   # linkedin.com/company/<id>/admin
+  bluesky:
+    type: bluesky
+  archive:
+    type: files
+    dir: archive
+
+rules:
+  maxHashtags: 2
+  allowEmoji: false
+  allowedLinkDomains: [nsisonglabs.com, nsisong.com]
+  hookMaxChars: 120
+  requireImage: true
+  topicCooldownDays: 14
+  bannedPhrases: ["game-changer", "revolutionize", "in today's fast-paced world"]

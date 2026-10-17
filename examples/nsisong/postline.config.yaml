@@ -1,0 +1,49 @@
+# Isaac Emmanuel (nsisong.com). A personal account: dark theme taken from the
+# blog, posting to LinkedIn as a member and mirroring posts into the blog repo.
+brand:
+  name: Isaac Emmanuel
+  url: nsisong.com
+  logo: assets/logo.svg
+  font:
+    family: Inter
+    url: https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block
+  colors:
+    background: "#1c1c1c"
+    panel: "#242424"
+    border: "#333333"
+    text: "#f5f5f5"
+    muted: "#a3a3a3"
+    accent: "#f3ffc4"
+    ok: ["#3d5a2e", "#cfeab0"]
+    warn: ["#5e4a14", "#f3dc8a"]
+    bad: ["#6b2a22", "#f3a99c"]
+  chips:
+    xss: bad
+    injection: bad
+    ssrf: bad
+    sanitise: ok
+
+timezone: America/New_York
+
+schedule:
+  weekStartsOn: tue
+  days: [tue, thu]
+  times: ["08:30"]
+
+card:
+  size: square
+
+channels:
+  linkedin:
+    type: linkedin
+    person: "REPLACE_WITH_MEMBER_ID"
+  blog:
+    type: files
+    dir: archive
+
+rules:
+  maxHashtags: 2
+  allowEmoji: false
+  allowedLinkDomains: [nsisong.com, nsisonglabs.com]
+  hookMaxChars: 120
+  requireImage: true

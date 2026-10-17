@@ -10,12 +10,12 @@ server, use your operating system's scheduler, or opt into GitHub Actions. A
 durable ledger records what went where.
 
 <p>
-  <img src="docs/images/rows-dark.png" width="32%" alt="Dark card with three numbered rows and status chips">
-  <img src="docs/images/rows-light.png" width="32%" alt="Light bakery card with three menu rows">
+  <img src="docs/images/rows-dark.png" width="32%" alt="Dark nsisong.com card: LLM output is untrusted input, with three risk rows">
+  <img src="docs/images/rows-light.png" width="32%" alt="Light Nsisong Labs card: ten years of building software, three lessons">
 </p>
-<img src="docs/images/grid-landscape.png" width="65%" alt="Landscape case study card with four stat panels">
+<img src="docs/images/grid-landscape.png" width="65%" alt="Landscape Nsisong Labs card with four industry panels">
 
-Same template, two brands. Every pixel comes from `postline.config.yaml` and the post file.
+Same template, two brands: [Nsisong Labs](https://nsisonglabs.com) and [nsisong.com](https://nsisong.com). Every pixel comes from `postline.config.yaml` and the post file.
 
 ## Why
 
@@ -186,19 +186,21 @@ Setup for each, including tokens: [docs/guides/channels.md](docs/guides/channels
 
 ## Examples
 
-- [`examples/northwind`](examples/northwind): a developer-tools company, dark theme, three posts a day, LinkedIn + Bluesky + archive.
-- [`examples/oakcrumb`](examples/oakcrumb): a bakery, light theme, four mornings a week, Mastodon + Instagram through Zapier.
+- [`examples/nsisonglabs`](examples/nsisonglabs): Nsisong Labs, the studio behind postline. Light theme, three mornings a week, LinkedIn page + Bluesky + archive.
+- [`examples/nsisong`](examples/nsisong): Isaac Emmanuel's personal account (nsisong.com). Dark theme, twice a week, LinkedIn as a member + a blog mirror.
+
+Both use real brands and real content from their owners. Swap in your own config and posts.
 
 ## Development
 
 ```sh
 npm install
 npm test
-node dist/src/cli.js render --cwd examples/northwind
+node dist/src/cli.js render --cwd examples/nsisonglabs
 ```
 
 Set `POSTLINE_CHROMIUM` to use a Chromium you already have.
 
 ## License
 
-MIT
+MIT. Built and maintained by [Isaac Emmanuel](https://nsisong.com) at [Nsisong Labs](https://nsisonglabs.com).

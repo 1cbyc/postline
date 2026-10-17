@@ -41,8 +41,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js",
     "lint:types": "tsc -p tsconfig.json --noEmit",
-    "example:lint": "node dist/src/cli.js lint --cwd examples/northwind",
-    "example:render": "node dist/src/cli.js render --cwd examples/northwind",
+    "example:lint": "node dist/src/cli.js lint --cwd examples/nsisonglabs",
+    "example:render": "node dist/src/cli.js render --cwd examples/nsisonglabs",
     "prepublishOnly": "npm test"
   },
   "dependencies": {
