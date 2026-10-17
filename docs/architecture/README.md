@@ -15,6 +15,8 @@ superseded ones stay, marked as such.
 | [007](adr-007-postline-does-not-write-copy.md) | postline does not write copy |
 | [008](adr-008-lint-gates-publishing.md) | Lint gates publishing |
 | [009](adr-009-durable-signed-publish-transitions.md) | Persist signed delivery intent before network calls |
+| [010](adr-010-bring-your-own-design-system.md) | Bring your own design system: tokens, stylesheet, templates |
+| [011](adr-011-local-graphics-library.md) | Keep a local graphics library outside the repo |
 
 ## Format
 

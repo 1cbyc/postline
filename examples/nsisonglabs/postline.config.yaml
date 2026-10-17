@@ -5,18 +5,29 @@ brand:
   url: nsisonglabs.com
   logo: assets/logo.svg
   font:
-    family: Space Grotesk
+    family: "{font.family}"
     url: https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=block
   colors:
-    background: "#ffffff"
-    panel: "#f4f7fd"
-    border: "#dbe3f6"
-    text: "#191a23"
-    muted: "#5b6070"
-    accent: "#1034a6"
+    background: "{color.surface.page}"
+    panel: "{color.surface.panel}"
+    border: "{color.surface.line}"
+    text: "{color.text.primary}"
+    muted: "{color.text.muted}"
+    accent: "{color.text.accent}"
     ok: ["#cfe9da", "#1d5c3a"]
     warn: ["#f6e2b3", "#6b4a00"]
     bad: ["#f4cfc8", "#8a2a1b"]
+
+# Bring your own design system: tokens, a stylesheet and custom layouts.
+design:
+  tokens: design/tokens.json
+  stylesheet: design/brand.css
+  templates: design/templates     # quote.html -> layout: quote
+
+# Full-quality copies of every card, kept on this computer.
+library:
+  dir: ~/Pictures/postline/nsisong-labs
+  scale: 3
 
 timezone: Africa/Lagos
 

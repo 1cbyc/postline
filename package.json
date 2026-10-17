@@ -1,6 +1,6 @@
 {
   "name": "postline",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Plan, render and publish branded social posts from a git repo.",
   "license": "MIT",
   "author": "Isaac Emmanuel <ei@nsisong.com> (https://nsisong.com)",

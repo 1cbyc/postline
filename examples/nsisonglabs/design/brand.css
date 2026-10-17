@@ -1,0 +1,4 @@
+/* Applied to every card, built-in or custom. Tokens are available as
+   CSS variables: color.brand.blue -> var(--color-brand-blue). */
+.row, .panel { border-radius: var(--radius-card); }
+.eyebrow { letter-spacing: 0.22em; }

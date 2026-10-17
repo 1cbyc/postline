@@ -35,7 +35,7 @@ Rules such as hashtag and hook limits apply to the final per-channel variant.
 
 ```yaml
 card:
-  layout: rows               # rows | grid | statement
+  layout: rows               # rows | grid | statement | any custom layout
   size: landscape            # optional, overrides card.size in config
   eyebrow: Case study        # small uppercase line in the accent colour
   headline:                  # 1 or 2 lines; line 2+ is in the accent colour
@@ -55,6 +55,25 @@ card:
 - **statement**: headline and an optional subline. Good for questions and quotes.
 
 Text in cards is escaped, so `<`, `&` and quotes are safe.
+
+## Custom layouts and card data
+
+With `design.templates` configured, `layout` can name any of your own templates
+(`postline layouts` lists them). Custom layouts don't require a headline and can
+read extra values from `card.data`:
+
+```yaml
+card:
+  layout: quote
+  headline: [Reputation compounds, faster than revenue.]
+  data:
+    author: Isaac Emmanuel
+    role: Founder, Nsisong Labs
+    tags: [business, lessons]
+```
+
+`card.data` accepts text, numbers, true/false, lists and nested mappings. See
+[design-systems.md](design-systems.md) for the template syntax.
 
 ## Status
 

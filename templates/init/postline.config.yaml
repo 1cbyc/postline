@@ -14,6 +14,17 @@ brand:
     muted: "#98a1ae"
     accent: "#7cc4ff"
 
+# Bring your own design system (optional). See docs/guides/design-systems.md.
+# design:
+#   tokens: design/tokens.json       # then e.g. accent: "{color.brand.primary}"
+#   stylesheet: design/brand.css
+#   templates: design/templates      # quote.html -> card.layout: quote
+
+# Full-quality copies of every card on this computer (on by default, off in CI).
+# library:
+#   dir: ~/Pictures/postline/your-company
+#   scale: 3
+
 timezone: America/New_York
 
 schedule:

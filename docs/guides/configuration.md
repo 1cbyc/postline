@@ -51,6 +51,16 @@ publish:
   maxAttempts: 3             # stop retrying a failing channel after this
   requestTimeoutMs: 30000    # bound every external API request
 
+design:                      # optional; see design-systems.md
+  tokens: design/tokens.json   # DTCG or Style Dictionary JSON; reference as "{color.brand}"
+  stylesheet: design/brand.css # extra CSS applied to every card
+  templates: design/templates  # <name>.html -> card.layout: <name>
+
+library:                     # see graphics-library.md
+  enabled: true              # default true, false in CI
+  dir: ~/Pictures/postline/<brand>
+  scale: 3                   # full-quality copies at 3x
+
 channels: {}                 # see channels.md
 
 rules:
@@ -62,6 +72,13 @@ rules:
   topicCooldownDays: 14      # warn when a topic repeats inside this window
   bannedPhrases: []
 ```
+
+## Design tokens in brand settings
+
+With `design.tokens` set, any value under `brand.colors` (including each half of the
+chip pairs) and `brand.font.family` can be a token reference such as
+`"{color.brand.blue}"`. Unknown tokens stop with an error naming the token.
+See [design-systems.md](design-systems.md).
 
 ## Fonts and offline rendering
 

@@ -25,6 +25,8 @@ out, or the same posts on three networks. postline gives you:
 
 - **Posts as files.** Review copy in pull requests. Grep your history. Nothing locked in a vendor.
 - **Cards from config.** Colours, font and logo live in one file. No design tool round trips for a weekly post.
+- **Your design system, not ours.** Point it at your design tokens, add your own CSS, or write your own card layouts in HTML.
+- **Every graphic kept.** A full-quality copy of each card is saved on your computer with a gallery to browse them later.
 - **Rules that block bad posts.** Hashtag limits, banned phrases, allowed link domains, emoji policy, character limits per network, and a check for broken text encoding.
 - **Boring, safe publishing.** Official APIs only. A post is sent at most once; if a run dies mid-send, postline stops and asks instead of guessing.
 
@@ -124,6 +126,37 @@ Postline then handles the rest:
 4. Publishes the text and image at the scheduled time.
 5. Records the outcome in its ledger.
 
+### Does every post look the same?
+
+Only if you want it to. There are three levels:
+
+1. **Built-in layouts** (rows, grid, statement) in your colours, font and logo. Zero setup.
+2. **Your design tokens and CSS.** Point `design.tokens` at the tokens file your design system already exports (W3C DTCG, Style Dictionary or plain JSON) and reference tokens in the config, e.g. `accent: "{color.brand.blue}"`. Add `design.stylesheet` to restyle the built-in layouts.
+3. **Your own layouts.** Drop HTML templates into `design.templates`; `quote.html` becomes `layout: quote`. Templates use Mustache syntax and get your brand, tokens and the post's card fields, plus any extra values under `card.data`.
+
+```yaml
+design:
+  tokens: design/tokens.json
+  stylesheet: design/brand.css
+  templates: design/templates
+```
+
+<img src="docs/images/custom-quote.png" width="32%" alt="Custom quote layout in the Nsisong Labs blue, rendered from an HTML template and design tokens">
+
+The card above is a custom layout from [`examples/nsisonglabs/design`](examples/nsisonglabs/design):
+a 27-line HTML template plus the studio's own tokens file.
+
+Full guide: [docs/guides/design-systems.md](docs/guides/design-systems.md).
+
+### Your graphics, kept
+
+Every card postline renders is also saved as a lossless, 3x PNG (3600 x 3600 for a
+square card) in a folder on your computer, `~/Pictures/postline/<brand>` by default,
+with the post text alongside it and an `index.html` gallery. Edited cards are saved
+as new versions, never overwritten. `postline library --open` opens the gallery and
+`postline export <id> --scale 4` makes a one-off copy at any size.
+Details: [docs/guides/graphics-library.md](docs/guides/graphics-library.md).
+
 The important distinction is that Postline is a configurable design renderer,
 not currently an AI designer. It reliably produces designs from the layouts and
 brand system you define, but it does not independently invent a completely new
@@ -135,11 +168,13 @@ visual composition for every post.
 postline.config.yaml + post Markdown
   -> parse and validate the brand, card and channel settings
   -> lint the text, links, schedule and card content
-  -> combine the selected layout with brand colours, font, logo and chip tones
+  -> resolve design tokens and pick the built-in or custom layout
+  -> combine the layout with brand colours, font, logo, chip tones and your stylesheet
   -> escape post content and embed local logo and font assets in card HTML
   -> hash the HTML and render settings, reusing an unchanged cached card
   -> open the exact square, portrait or landscape viewport in Chromium
   -> wait for the page and fonts, then capture the final PNG or JPEG
+  -> save a full-quality copy and its metadata to the local graphics library
   -> upload the text and image through the selected channel adapter
   -> record the attempt and remote result in the publishing ledger
 ```
@@ -156,7 +191,10 @@ layout and brand adjustments easier to inspect in a browser before publishing.
 | `postline status [--week DATE]` | Show each slot and whether it is empty, drafted, queued or sent |
 | `postline brief [--week DATE]` | Print a Markdown writing brief: open slots, rules, recent topics |
 | `postline lint` | Check every post; exits non-zero on errors |
-| `postline render [id] [--force] [--html]` | Render cards to `out/cards/` |
+| `postline render [id] [--force] [--html] [--no-library]` | Render cards to `out/cards/` and keep full-quality copies in the library |
+| `postline export <id> [--scale N] [--size S] [--format F] [--out FILE]` | Save one card at any resolution, size or format |
+| `postline library [--open]` | Show the graphics library folder; `--open` opens the gallery |
+| `postline layouts` | List built-in and custom layouts, tokens and stylesheet in use |
 | `postline publish [--dry-run] [--now ISO] [--catch-up] [--only ID]` | Send everything that is due; CI also uses its two-phase prepare/resume flags |
 | `postline daemon [--every MINUTES]` | Publish continuously on an always-on machine, without GitHub Actions |
 | `postline retry <id> <channel>` | Clear a failed or stuck entry so it sends again |
@@ -178,6 +216,8 @@ Setup for each, including tokens: [docs/guides/channels.md](docs/guides/channels
 
 - [Getting started](docs/guides/getting-started.md)
 - [Configuration](docs/guides/configuration.md)
+- [Bring your own design system](docs/guides/design-systems.md)
+- [Your graphics library](docs/guides/graphics-library.md)
 - [Content format](docs/guides/content-format.md)
 - [Channels](docs/guides/channels.md)
 - [Scheduling options](docs/guides/scheduling.md)
@@ -186,7 +226,7 @@ Setup for each, including tokens: [docs/guides/channels.md](docs/guides/channels
 
 ## Examples
 
-- [`examples/nsisonglabs`](examples/nsisonglabs): Nsisong Labs, the studio behind postline. Light theme, three mornings a week, LinkedIn page + Bluesky + archive.
+- [`examples/nsisonglabs`](examples/nsisonglabs): Nsisong Labs, the studio behind postline. Light theme driven by its own design tokens, a brand stylesheet and a custom `quote` layout; LinkedIn page + Bluesky + archive.
 - [`examples/nsisong`](examples/nsisong): Isaac Emmanuel's personal account (nsisong.com). Dark theme, twice a week, LinkedIn as a member + a blog mirror.
 
 Both use real brands and real content from their owners. Swap in your own config and posts.

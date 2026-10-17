@@ -1,0 +1,27 @@
+{{! A custom layout for pull quotes. Use it with `layout: quote`.
+    Brand colours, fonts and tokens are injected into <head> by postline. }}
+<style>
+  .q { position: relative; height: 100%; padding: 96px; display: flex; flex-direction: column;
+       background: var(--color-brand-blue); color: #fff; }
+  .q .top { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600; }
+  .q .top img { height: 44px; background: #fff; border-radius: 50%; padding: 3px; }
+  .q .body { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .q .mark { font-size: 260px; line-height: .7; color: var(--color-brand-blue-light); opacity: .35; }
+  .q blockquote { margin: 8px 0 0; font-size: {{#size.landscape}}54px{{/size.landscape}}{{^size.landscape}}72px{{/size.landscape}};
+       line-height: 1.08; font-weight: 700; letter-spacing: -0.03em; }
+  .q blockquote em { font-style: normal; color: var(--color-brand-blue-light); }
+  .q .who { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; font-size: 26px; }
+  .q .who strong { display: block; font-size: 30px; }
+  .q .who span { opacity: .75; }
+</style>
+<div class="q">
+  <div class="top">{{#brand.logo}}<img src="{{brand.logo}}" alt="">{{/brand.logo}}{{brand.name}}</div>
+  <div class="body">
+    <div class="mark">&ldquo;</div>
+    <blockquote>{{card.headlineFirst}}{{#card.headlineRest}}<br><em>{{.}}</em>{{/card.headlineRest}}</blockquote>
+  </div>
+  <div class="who">
+    <div><strong>{{data.author}}</strong><span>{{data.role}}</span></div>
+    <span>{{brand.urlText}}</span>
+  </div>
+</div>

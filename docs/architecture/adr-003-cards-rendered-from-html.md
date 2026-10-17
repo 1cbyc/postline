@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Extended by ADR-010 (custom templates and design tokens).
 
 ## Context
 
