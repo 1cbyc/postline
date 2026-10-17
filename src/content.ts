@@ -14,14 +14,19 @@ export interface CardItem {
   chip?: string;
 }
 
+export type CardData = string | number | boolean | CardData[] | { [key: string]: CardData };
+
 export interface CardSpec {
-  layout: "rows" | "grid" | "statement";
+  /** A built-in layout (rows, grid, statement) or a custom one from design.templates. */
+  layout: string;
   eyebrow?: string;
   headline: string[];
   subline?: string;
   items: CardItem[];
   footer?: string;
   size?: CardSize;
+  /** Free-form values for custom templates: {{data.price}}, {{#data.tags}}...{{/data.tags}}. */
+  data?: Record<string, CardData>;
 }
 
 export interface Post {
@@ -42,7 +47,29 @@ export interface Post {
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 const CARD_SIZES = ["square", "landscape", "portrait"] as const;
-const CARD_LAYOUTS = ["rows", "grid", "statement"] as const;
+const BUILT_IN_LAYOUTS = ["rows", "grid", "statement"];
+
+function parseData(value: unknown, path: string, problems: string[], depth = 0): CardData | undefined {
+  if (depth > 6) {
+    problems.push(`${path} is nested too deeply`);
+    return undefined;
+  }
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (Array.isArray(value)) {
+    return value.map((v, i) => parseData(v, `${path}[${i}]`, problems, depth + 1)).filter((v): v is CardData => v !== undefined);
+  }
+  if (isRecord(value)) {
+    const out: Record<string, CardData> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const parsed = parseData(v, `${path}.${k}`, problems, depth + 1);
+      if (parsed !== undefined) out[k] = parsed;
+    }
+    return out;
+  }
+  problems.push(`${path} must be text, a number, true/false, a list or a mapping`);
+  return undefined;
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,7 +117,7 @@ function parseCardItem(value: unknown, index: number, problems: string[]): CardI
   };
 }
 
-function parseCard(value: unknown, problems: string[]): CardSpec | undefined {
+function parseCard(value: unknown, problems: string[], customLayouts: string[]): CardSpec | undefined {
   if (value == null) return undefined;
   if (!isRecord(value)) {
     problems.push("card must be a mapping");
@@ -106,7 +133,6 @@ function parseCard(value: unknown, problems: string[]): CardSpec | undefined {
     : typeof headlineValue === "string"
       ? [headlineValue]
       : [];
-  if (headline.length === 0) problems.push("card.headline is required when card is set");
 
   const itemsValue = value.items ?? [];
   if (!Array.isArray(itemsValue)) problems.push("card.items must be a list");
@@ -116,10 +142,11 @@ function parseCard(value: unknown, problems: string[]): CardSpec | undefined {
 
   const defaultLayout = items.length > 0 ? "rows" : "statement";
   const layoutValue = value.layout ?? defaultLayout;
-  const layout = CARD_LAYOUTS.includes(layoutValue as CardSpec["layout"])
-    ? (layoutValue as CardSpec["layout"])
-    : defaultLayout;
-  if (layoutValue !== layout) problems.push(`card.layout "${String(layoutValue)}" is not rows, grid or statement`);
+  const known = [...BUILT_IN_LAYOUTS, ...customLayouts.filter((l) => !BUILT_IN_LAYOUTS.includes(l))];
+  const layout = typeof layoutValue === "string" && known.includes(layoutValue) ? layoutValue : defaultLayout;
+  if (layoutValue !== layout) problems.push(`card.layout "${String(layoutValue)}" is not one of: ${known.join(", ")}`);
+  const custom = customLayouts.includes(layout);
+  if (headline.length === 0 && !custom) problems.push("card.headline is required when card is set");
 
   const sizeValue = value.size;
   const size = CARD_SIZES.includes(sizeValue as CardSize) ? (sizeValue as CardSize) : undefined;
@@ -128,6 +155,11 @@ function parseCard(value: unknown, problems: string[]): CardSpec | undefined {
   const eyebrow = optionalString(value.eyebrow, "card.eyebrow", problems);
   const subline = optionalString(value.subline, "card.subline", problems);
   const footer = optionalString(value.footer, "card.footer", problems);
+  let data: Record<string, CardData> | undefined;
+  if (value.data != null) {
+    if (!isRecord(value.data)) problems.push("card.data must be a mapping");
+    else data = parseData(value.data, "card.data", problems) as Record<string, CardData>;
+  }
   return {
     layout,
     headline,
@@ -136,6 +168,7 @@ function parseCard(value: unknown, problems: string[]): CardSpec | undefined {
     ...(subline === undefined ? {} : { subline }),
     ...(footer === undefined ? {} : { footer }),
     ...(size === undefined ? {} : { size }),
+    ...(data === undefined ? {} : { data }),
   };
 }
 
@@ -193,7 +226,7 @@ export function parsePost(src: string, file: string, cfg: Config): Post {
   const topic = optionalString(data.topic, "topic", problems);
   const imageValue = optionalString(data.image, "image", problems);
   const alt = optionalString(data.alt, "alt", problems);
-  const card = parseCard(data.card, problems);
+  const card = parseCard(data.card, problems, Object.keys(cfg.design.layouts));
   return {
     id,
     file,

@@ -1,8 +1,10 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { homedir } from "node:os";
+import { resolve, join, isAbsolute } from "node:path";
 import YAML from "yaml";
 import { isPathInside } from "./path.js";
 import { isValidTimeZone, WEEKDAYS, type Weekday } from "./time.js";
+import { DesignError, discoverLayouts, loadTokens, resolveAlias, type TokenMap } from "./design.js";
 
 export type Tone = "ok" | "warn" | "bad" | "neutral";
 export type CardSize = "square" | "landscape" | "portrait";
@@ -89,6 +91,24 @@ export type ChannelConfig =
   | WebhookChannelConfig
   | FilesChannelConfig;
 
+export interface DesignConfig {
+  /** Flattened design tokens, already alias-resolved. Empty without design.tokens. */
+  tokens: TokenMap;
+  tokensFile?: string;
+  /** Extra CSS appended to every card, built-in or custom. */
+  stylesheet?: string;
+  /** Custom layouts: layout name -> absolute path of the HTML template. */
+  layouts: Record<string, string>;
+}
+
+export interface LibraryConfig {
+  enabled: boolean;
+  /** Folder on this computer where full-quality copies of every card are kept. */
+  dir: string;
+  /** Device pixel ratio for library copies (1200px wide card x scale). */
+  scale: number;
+}
+
 export interface Config {
   root: string;
   file: string;
@@ -102,6 +122,8 @@ export interface Config {
   publish: { lateMinutes: number; maxAttempts: number; requestTimeoutMs: number };
   channels: Record<string, ChannelConfig>;
   rules: Rules;
+  design: DesignConfig;
+  library: LibraryConfig;
 }
 
 const CHANNEL_TYPES = ["linkedin", "bluesky", "mastodon", "webhook", "files"] as const;
@@ -199,6 +221,15 @@ function language(value: unknown, label: string, fallback: string): string {
   const lang = stringValue(value, label, fallback);
   if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(lang)) throw new ConfigError(`${label} must be a language tag such as en or en-US`);
   return lang;
+}
+
+function tokenRef(tokens: TokenMap, value: unknown, label: string): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return resolveAlias(tokens, value, label);
+  } catch (error) {
+    throw new ConfigError((error as Error).message);
+  }
 }
 
 function cssColor(value: unknown, label: string, fallback: string): string {
@@ -315,8 +346,45 @@ export function loadConfig(cwd: string, explicit?: string): Config {
   return normalizeConfig(raw ?? {}, resolve(file, ".."), file);
 }
 
-export function normalizeConfig(input: unknown, root: string, file = "<inline>"): Config {
+function slug(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "brand";
+}
+
+function userPath(value: string, root: string): string {
+  if (value === "~") return homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\")) return join(homedir(), value.slice(2));
+  return isAbsolute(value) ? value : resolve(root, value);
+}
+
+function normalizeDesign(raw: UnknownRecord, root: string): DesignConfig {
+  const design: DesignConfig = { tokens: new Map(), layouts: {} };
+  try {
+    if (raw.tokens != null) {
+      design.tokensFile = projectPath(root, raw.tokens, "design.tokens", "");
+      if (!existsSync(design.tokensFile)) throw new ConfigError(`design.tokens not found: ${design.tokensFile}`);
+      design.tokens = loadTokens(design.tokensFile);
+    }
+    if (raw.stylesheet != null) {
+      design.stylesheet = projectPath(root, raw.stylesheet, "design.stylesheet", "");
+      if (!existsSync(design.stylesheet)) throw new ConfigError(`design.stylesheet not found: ${design.stylesheet}`);
+    }
+    if (raw.templates != null) design.layouts = discoverLayouts(projectPath(root, raw.templates, "design.templates", ""));
+  } catch (error) {
+    if (error instanceof DesignError) throw new ConfigError(error.message);
+    throw error;
+  }
+  return design;
+}
+
+export function normalizeConfig(
+  input: unknown,
+  root: string,
+  file = "<inline>",
+  env: NodeJS.ProcessEnv = process.env,
+): Config {
   const raw = record(input, "config");
+  const design = normalizeDesign(optionalRecord(raw.design, "design"), root);
+  const libraryRaw = optionalRecord(raw.library, "library");
   const brandRaw = optionalRecord(raw.brand, "brand");
   const scheduleRaw = optionalRecord(raw.schedule, "schedule");
   const cardRaw = optionalRecord(raw.card, "card");
@@ -353,6 +421,12 @@ export function normalizeConfig(input: unknown, root: string, file = "<inline>")
   const formatValue = stringValue(cardRaw.format, "card.format", "png");
   if (formatValue !== "png" && formatValue !== "jpeg") throw new ConfigError("card.format must be png or jpeg");
 
+  for (const key of Object.keys(colorsRaw)) {
+    const value = colorsRaw[key];
+    colorsRaw[key] = Array.isArray(value)
+      ? value.map((v, i) => tokenRef(design.tokens, v, `brand.colors.${key}[${i}]`))
+      : tokenRef(design.tokens, value, `brand.colors.${key}`);
+  }
   const colors: BrandColors = {
     background: cssColor(colorsRaw.background, "brand.colors.background", DEFAULT_COLORS.background),
     panel: cssColor(colorsRaw.panel, "brand.colors.panel", DEFAULT_COLORS.panel),
@@ -388,7 +462,7 @@ export function normalizeConfig(input: unknown, root: string, file = "<inline>")
       ...(brandLogo ? { logo: brandLogo } : {}),
       showName: booleanValue(brandRaw.showName, "brand.showName", true),
       font: {
-        family: stringValue(fontRaw.family, "brand.font.family", "Inter"),
+        family: stringValue(tokenRef(design.tokens, fontRaw.family, "brand.font.family"), "brand.font.family", "Inter"),
         ...(fontUrl ? { url: fontUrl } : {}),
         ...(fontFile ? { file: fontFile } : {}),
       },
@@ -419,6 +493,17 @@ export function normalizeConfig(input: unknown, root: string, file = "<inline>")
       requireImage: booleanValue(rulesRaw.requireImage, "rules.requireImage", false),
       topicCooldownDays: numberValue(rulesRaw.topicCooldownDays, "rules.topicCooldownDays", 14, { min: 0, max: 3650 }),
       bannedPhrases: stringArray(rulesRaw.bannedPhrases, "rules.bannedPhrases"),
+    },
+    design,
+    library: {
+      // CI machines are thrown away after each run, so the library is off there
+      // unless a config asks for it explicitly.
+      enabled: booleanValue(libraryRaw.enabled, "library.enabled", !env.CI),
+      dir: userPath(
+        stringValue(libraryRaw.dir, "library.dir", join("~", "Pictures", "postline", slug(stringValue(brandRaw.name, "brand.name")))),
+        root,
+      ),
+      scale: numberValue(libraryRaw.scale, "library.scale", 3, { min: 1, max: 4 }),
     },
   };
 }

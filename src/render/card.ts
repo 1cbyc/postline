@@ -1,23 +1,19 @@
 import { readFileSync, existsSync } from "node:fs";
 import { extname } from "node:path";
-import type { Brand, CardSize, Tone } from "../config.js";
+import type { Brand, CardSize, DesignConfig, Tone } from "../config.js";
+import { tokenCss, tokenTree } from "../design.js";
+import { renderTemplate, TemplateError } from "./template.js";
 import type { CardSpec } from "../content.js";
 import { resolveInside } from "../path.js";
+import { esc } from "./escape.js";
+
+export { esc };
 
 export const SIZES: Record<CardSize, { width: number; height: number }> = {
   square: { width: 1200, height: 1200 },
   landscape: { width: 1200, height: 627 },
   portrait: { width: 1080, height: 1350 },
 };
-
-export function esc(s: string | undefined): string {
-  return (s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -36,13 +32,16 @@ function dataUri(file: string): string {
   return `data:${mime};base64,${readFileSync(file).toString("base64")}`;
 }
 
+function logoUri(brand: Brand, root: string): string {
+  if (!brand.logo) return "";
+  const file = resolveInside(root, brand.logo);
+  if (!existsSync(file)) throw new Error(`brand.logo not found: ${file}`);
+  return dataUri(file);
+}
+
 function logoHtml(brand: Brand, root: string): string {
-  let mark = "";
-  if (brand.logo) {
-    const file = resolveInside(root, brand.logo);
-    if (!existsSync(file)) throw new Error(`brand.logo not found: ${file}`);
-    mark = `<img class="mark" src="${dataUri(file)}" alt="">`;
-  }
+  const uri = logoUri(brand, root);
+  const mark = uri ? `<img class="mark" src="${uri}" alt="">` : "";
   const name = brand.showName ? `<span class="name">${esc(brand.name)}</span>` : "";
   return `<div class="logo">${mark}${name}</div>`;
 }
@@ -96,7 +95,32 @@ function body(spec: CardSpec, brand: Brand): string {
     .join("")}</div>`;
 }
 
-export function cardHtml(spec: CardSpec, brand: Brand, root: string, size: CardSize): string {
+const NO_DESIGN: DesignConfig = { tokens: new Map(), layouts: {} };
+
+function brandVars(brand: Brand): string {
+  const c = brand.colors;
+  return `:root{
+    --bg:${c.background};--panel:${c.panel};--border:${c.border};--text:${c.text};--muted:${c.muted};--accent:${c.accent};
+    --ok-bg:${c.ok[0]};--ok:${c.ok[1]};--warn-bg:${c.warn[0]};--warn:${c.warn[1]};--bad-bg:${c.bad[0]};--bad:${c.bad[1]};
+    --font:"${esc(brand.font.family)}",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }`;
+}
+
+/** The user's design.stylesheet, inlined. Kept last so it wins over built-in rules. */
+function userStylesheet(design: DesignConfig): string {
+  if (!design.stylesheet) return "";
+  const css = readFileSync(design.stylesheet, "utf8").replace(/<\/style/gi, "<\\/style");
+  return `<style data-source="design.stylesheet">${css}</style>`;
+}
+
+function designHead(design: DesignConfig): string {
+  const tokens = tokenCss(design.tokens);
+  return tokens ? `<style data-source="design.tokens">${tokens}</style>` : "";
+}
+
+export function cardHtml(spec: CardSpec, brand: Brand, root: string, size: CardSize, design: DesignConfig = NO_DESIGN): string {
+  const template = design.layouts[spec.layout];
+  if (template) return customCardHtml(template, spec, brand, root, size, design);
   const { width, height } = SIZES[size];
   const c = brand.colors;
   const unit = width / 1200; // 1rem == 10px at 1200 wide
@@ -106,6 +130,7 @@ export function cardHtml(spec: CardSpec, brand: Brand, root: string, size: CardS
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 ${fontHtml(brand, root)}
+${designHead(design)}
 <style>
   :root{
     --bg:${c.background};--panel:${c.panel};--border:${c.border};--text:${c.text};--muted:${c.muted};--accent:${c.accent};
@@ -152,7 +177,9 @@ ${fontHtml(brand, root)}
   .panel .chip{align-self:flex-start;margin-top:1.6rem}
   footer{display:flex;justify-content:space-between;align-items:flex-end;gap:4rem;color:var(--muted);font-size:2.4rem;line-height:1.35}
   footer .url{color:var(--accent);font-weight:700;white-space:nowrap}
-</style></head>
+</style>
+${userStylesheet(design)}
+</head>
 <body><div class="card ${spec.layout === "statement" || spec.items.length === 0 ? "statement" : ""}">
   ${logoHtml(brand, root)}
   <div class="main">
@@ -164,4 +191,94 @@ ${fontHtml(brand, root)}
   </div>
   <footer><span>${esc(spec.footer)}</span>${footerRight}</footer>
 </div></body></html>`;
+}
+
+function chipTone(brand: Brand, text: string | undefined): Tone | undefined {
+  return text ? (brand.chips[text.toLowerCase()] ?? "neutral") : undefined;
+}
+
+/** Everything a custom template can use. Documented in docs/guides/design-systems.md. */
+export function templateView(spec: CardSpec, brand: Brand, root: string, size: CardSize, design: DesignConfig): Record<string, unknown> {
+  const { width, height } = SIZES[size];
+  const [first, ...rest] = spec.headline;
+  const c = brand.colors;
+  return {
+    brand: {
+      name: brand.name,
+      url: brand.url ?? "",
+      urlText: (brand.url ?? "").replace(/^https?:\/\//, "").replace(/\/$/, ""),
+      logo: logoUri(brand, root),
+      showName: brand.showName,
+      font: { family: brand.font.family },
+    },
+    colors: {
+      background: c.background,
+      panel: c.panel,
+      border: c.border,
+      text: c.text,
+      muted: c.muted,
+      accent: c.accent,
+      ok: { fill: c.ok[0], text: c.ok[1] },
+      warn: { fill: c.warn[0], text: c.warn[1] },
+      bad: { fill: c.bad[0], text: c.bad[1] },
+    },
+    tokens: tokenTree(design.tokens),
+    card: {
+      layout: spec.layout,
+      eyebrow: spec.eyebrow ?? "",
+      headline: spec.headline,
+      headlineFirst: first ?? "",
+      headlineRest: rest,
+      headlineText: spec.headline.join(" "),
+      subline: spec.subline ?? "",
+      footer: spec.footer ?? "",
+      hasItems: spec.items.length > 0,
+      items: spec.items.map((item, index) => ({
+        ...item,
+        index,
+        number: index + 1,
+        first: index === 0,
+        last: index === spec.items.length - 1,
+        tone: chipTone(brand, item.chip) ?? "",
+      })),
+    },
+    data: spec.data ?? {},
+    size: { name: size, width, height, square: size === "square", landscape: size === "landscape", portrait: size === "portrait" },
+  };
+}
+
+/**
+ * A user-supplied HTML template. postline always injects the charset, fonts,
+ * brand variables and tokens into <head>, then the user's stylesheet, so a
+ * template only has to describe layout.
+ */
+export function customCardHtml(
+  templateFile: string,
+  spec: CardSpec,
+  brand: Brand,
+  root: string,
+  size: CardSize,
+  design: DesignConfig,
+): string {
+  const { width, height } = SIZES[size];
+  let body: string;
+  try {
+    body = renderTemplate(readFileSync(templateFile, "utf8"), templateView(spec, brand, root, size, design));
+  } catch (error) {
+    if (error instanceof TemplateError) throw new Error(`template ${templateFile}: ${error.message}`);
+    throw error;
+  }
+  const head = `<meta charset="utf-8">
+${fontHtml(brand, root)}
+<style data-source="postline">${brandVars(brand)}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{width:${width}px;height:${height}px;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
+</style>
+${designHead(design)}
+${userStylesheet(design)}`;
+  // Function replacers so "$" in user CSS is never treated as a pattern.
+  if (/<head(\s[^>]*)?>/i.test(body)) return body.replace(/<head(\s[^>]*)?>/i, (tag) => `${tag}\n${head}`);
+  if (/<html(\s[^>]*)?>/i.test(body)) return body.replace(/<html(\s[^>]*)?>/i, (tag) => `${tag}<head>\n${head}</head>`);
+  return `<!doctype html>\n<html><head>\n${head}</head>\n<body>\n${body}\n</body></html>`;
 }
