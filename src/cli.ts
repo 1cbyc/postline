@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync, existsSync, mkdirSync, cpSync, renameSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, ConfigError, type Config } from "./config.js";
@@ -12,6 +13,9 @@ import { publishDue } from "./publish.js";
 import { brief } from "./brief.js";
 import { localDate } from "./time.js";
 import { runDaemon } from "./daemon.js";
+import { Library } from "./library.js";
+import { BUILT_IN_LAYOUTS } from "./design.js";
+import type { CardSize } from "./config.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..", "..");
@@ -27,6 +31,11 @@ Commands
   brief [--week DATE]      print a writing brief for a week (Markdown)
   lint                     check every post against the rules
   render [id] [--force]    render cards to out/cards (--html also writes HTML)
+                           and keep a full-quality copy in the library (--no-library skips it)
+  export <id> [--scale N] [--format png|jpeg] [--size S] [--out FILE]
+                           save one card at any resolution, e.g. --scale 4 for print
+  library [--open]         show where saved graphics live; --open opens the gallery
+  layouts                  list built-in and custom card layouts
   publish [--dry-run]      send posts whose time has come
           [--now ISO] [--catch-up] [--only ID]
           [--prepare-only | --resume-prepared]
@@ -65,7 +74,19 @@ export function parseArgs(argv: string[]): Args {
   return out;
 }
 
-const BOOL_FLAGS = new Set(["force", "dry-run", "catch-up", "prepare-only", "resume-prepared", "html", "help", "version"]);
+const BOOL_FLAGS = new Set(["force", "dry-run", "catch-up", "prepare-only", "resume-prepared", "html", "help", "version", "no-library", "open"]);
+
+function libraryFor(cfg: Config, args: Args): Library | undefined {
+  return cfg.library.enabled && !args.flags["no-library"] ? new Library(cfg) : undefined;
+}
+
+function openPath(path: string): void {
+  const [cmd, cmdArgs] =
+    process.platform === "darwin" ? ["open", [path]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", path]] : ["xdg-open", [path]];
+  spawn(cmd as string, cmdArgs as string[], { detached: true, stdio: "ignore" }).on("error", () => {
+    console.error(`could not open ${path}; open it in your browser instead`);
+  }).unref();
+}
 
 function str(args: Args, k: string): string | undefined {
   const v = args.flags[k];
@@ -103,6 +124,7 @@ async function publishCommand(cwd: string, configFile: string | undefined, args:
   const ledger = new Ledger(cfg.stateDir);
   let renderer: Renderer | undefined;
   const only = str(args, "only");
+  const library = libraryFor(cfg, args);
   try {
     const outcomes = await publishDue(cfg, posts, ledger, {
       now,
@@ -112,7 +134,8 @@ async function publishCommand(cwd: string, configFile: string | undefined, args:
       resumePrepared,
       ...(only === undefined ? {} : { only }),
       deps: { env: process.env, fetch: globalThis.fetch, root: cfg.root, requestTimeoutMs: cfg.publish.requestTimeoutMs },
-      renderer: () => (renderer ??= new Renderer(cfg)),
+      renderer: () => (renderer ??= new Renderer(cfg, { ...(library ? { library } : {}), warn: (m) => console.error(yellow(m)) })),
+      ...(library ? { library } : {}),
       log: (line) => console.log(line),
     });
     if (outcomes.length === 0) console.log(`nothing due at ${now.toISOString()} (${localDate(now, cfg.timezone)} ${cfg.timezone})`);
@@ -255,16 +278,80 @@ async function main(argv: string[]): Promise<number> {
         console.error(`no post "${id}" with a card`);
         return 1;
       }
-      const r = new Renderer(cfg);
+      const library = libraryFor(cfg, args);
+      const r = new Renderer(cfg, { ...(library ? { library } : {}), warn: (m) => console.error(yellow(m)) });
+      let saved = 0;
       try {
         for (const p of targets) {
           if (args.flags.html) r.writeHtml(p);
           const out = await r.render(p, { force: Boolean(args.flags.force) });
+          if (out.libraryFile) saved++;
           console.log(`${out.cached ? dim("cached  ") : green("rendered")} ${displayPath(cfg, out.file)}`);
         }
       } finally {
         await r.close();
       }
+      if (library && saved > 0) console.log(`\nsaved ${saved} full-quality cop${saved === 1 ? "y" : "ies"} to ${library.dir}`);
+      return 0;
+    }
+
+    case "export": {
+      const id = rest[0];
+      const post = posts.find((p) => p.id === id && p.card);
+      if (!id || !post) {
+        console.error(id ? `no post "${id}" with a card` : "usage: postline export <id> [--scale N] [--format png|jpeg] [--size S] [--out FILE]");
+        return 1;
+      }
+      const scale = Number(str(args, "scale") ?? "4");
+      if (!Number.isFinite(scale) || scale < 1 || scale > 8) throw new ConfigError("--scale must be between 1 and 8");
+      const format = (str(args, "format") ?? "png") as "png" | "jpeg";
+      if (format !== "png" && format !== "jpeg") throw new ConfigError("--format must be png or jpeg");
+      const size = str(args, "size") as CardSize | undefined;
+      if (size && !["square", "landscape", "portrait"].includes(size)) throw new ConfigError("--size must be square, landscape or portrait");
+      const ext = format === "png" ? "png" : "jpg";
+      const defaultDir = cfg.library.enabled ? join(cfg.library.dir, "exports") : join(cfg.outDir, "exports");
+      const out = resolve(cwd, str(args, "out") ?? join(defaultDir, `${post.id}${size ? `-${size}` : ""}@${scale}x.${ext}`));
+      const r = new Renderer(cfg);
+      try {
+        await r.export(post, { scale, format, quality: 95, out, ...(size ? { size } : {}) });
+      } finally {
+        await r.close();
+      }
+      console.log(`exported ${out}`);
+      return 0;
+    }
+
+    case "library": {
+      const library = new Library(cfg);
+      const items = library.list();
+      if (!cfg.library.enabled) console.log(yellow("the library is turned off (library.enabled: false, or running in CI)"));
+      console.log(`folder:  ${library.dir}`);
+      console.log(`cards:   ${items.length}`);
+      if (items.length > 0) {
+        if (!existsSync(library.indexFile)) library.writeIndex();
+        console.log(`gallery: ${library.indexFile}`);
+        for (const m of items.slice(0, 10)) {
+          const sent = m.published.length ? green(`sent to ${m.published.map((p) => p.channel).join(", ")}`) : dim("not sent");
+          console.log(`  ${m.file.padEnd(48)} ${sent}`);
+        }
+        if (items.length > 10) console.log(dim(`  ...and ${items.length - 10} more`));
+        if (args.flags.open) openPath(library.indexFile);
+      } else {
+        console.log(dim("nothing saved yet; run `postline render`"));
+      }
+      return 0;
+    }
+
+    case "layouts": {
+      const custom = cfg.design.layouts;
+      for (const name of BUILT_IN_LAYOUTS) {
+        console.log(`${name.padEnd(16)} ${custom[name] ? `custom (overrides built-in) ${displayPath(cfg, custom[name]!)}` : dim("built-in")}`);
+      }
+      for (const [name, file] of Object.entries(custom)) {
+        if (!(BUILT_IN_LAYOUTS as readonly string[]).includes(name)) console.log(`${name.padEnd(16)} custom ${displayPath(cfg, file)}`);
+      }
+      if (cfg.design.tokensFile) console.log(`\ntokens: ${cfg.design.tokens.size} from ${displayPath(cfg, cfg.design.tokensFile)}`);
+      if (cfg.design.stylesheet) console.log(`stylesheet: ${displayPath(cfg, cfg.design.stylesheet)}`);
       return 0;
     }
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import type { Config } from "./config.js";
@@ -6,6 +7,7 @@ import { Ledger } from "./ledger.js";
 import { lint } from "./lint.js";
 import { createAdapter, type AdapterDeps, type MediaInput } from "./adapters/index.js";
 import type { Renderer } from "./render/png.js";
+import type { Library } from "./library.js";
 import { firstLine } from "./text.js";
 
 export interface PublishOptions {
@@ -17,6 +19,8 @@ export interface PublishOptions {
   only?: string;
   deps: AdapterDeps;
   renderer: () => Renderer;
+  /** Local graphics library. Publishing never fails because of it. */
+  library?: Library;
   log: (line: string) => void;
 }
 
@@ -49,7 +53,15 @@ async function mediaFor(post: Post, opts: PublishOptions, cache: Map<string, Med
   if (post.image) {
     const ext = extname(post.image).toLowerCase();
     if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") throw new Error(`${post.id}: image must be PNG or JPEG`);
-    media = { bytes: readFileSync(post.image), mime: ext === ".png" ? "image/png" : "image/jpeg", alt };
+    const bytes = readFileSync(post.image);
+    media = { bytes, mime: ext === ".png" ? "image/png" : "image/jpeg", alt };
+    if (opts.library && !opts.dryRun) {
+      try {
+        opts.library.saveImageFile(post, post.image, createHash("sha256").update(bytes).digest("hex"));
+      } catch (error) {
+        opts.log(`! ${post.id}: could not copy image to the library: ${(error as Error).message}`);
+      }
+    }
   } else if (post.card) {
     const r = await opts.renderer().render(post);
     media = { bytes: readFileSync(r.file), mime: r.mime, alt, width: r.width, height: r.height };
@@ -125,6 +137,16 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       ledger.set(post.id, channel, { status: "published", remoteId: res.id, ...(res.url === undefined ? {} : { url: res.url }) }, new Date());
       outcomes.push({ post: post.id, channel, result: "published", detail: res.url ?? res.id });
       opts.log(`+ ${tag}: ${res.url ?? res.id}`);
+      try {
+        opts.library?.recordPublished(post.id, {
+          channel,
+          at: new Date().toISOString(),
+          remoteId: res.id,
+          ...(res.url === undefined ? {} : { url: res.url }),
+        });
+      } catch (error) {
+        opts.log(`! ${tag}: published, but the library note failed: ${(error as Error).message}`);
+      }
     } catch (err) {
       const message = (err as Error).message;
       ledger.set(post.id, channel, { status: "failed", error: message }, new Date());
