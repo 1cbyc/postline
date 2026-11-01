@@ -30,6 +30,8 @@ out, or the same posts on three networks. postline gives you:
 - **Your design system, not ours.** Point it at your design tokens, add your own CSS, or write your own card layouts in HTML.
 - **Every graphic kept.** A full-quality copy of each card is saved on your computer with a gallery to browse them later.
 - **Rules that block bad posts.** Hashtag limits, banned phrases, allowed link domains, emoji policy, character limits per network, and a check for broken text encoding.
+- **See it before it ships.** `postline preview` shows each post the way each network will, and the GitHub Action comments rendered cards and lint results on every pull request.
+- **Problems found early.** `postline doctor` catches expiring LinkedIn tokens, retired API versions and stuck posts, and alerts go to Slack, Discord, ntfy or your own endpoint.
 - **Boring, safe publishing.** Official APIs only. A post is sent at most once; if a run dies mid-send or the network gives no clear answer, postline stops and asks instead of guessing.
 
 ## Quick start
@@ -161,12 +163,15 @@ layout and brand adjustments easier to inspect in a browser before publishing.
 | `postline status [--week DATE]` | Show each slot and whether it is empty, drafted, queued or sent |
 | `postline brief [--week DATE]` | Print a Markdown writing brief: open slots, rules, recent topics |
 | `postline lint` | Check every post; exits non-zero on errors |
+| `postline preview [--open]` | Local page showing each post the way each network will display it; reloads on save |
 | `postline render [id] [--force] [--html] [--no-library]` | Render cards to `out/cards/` and keep full-quality copies in the library |
 | `postline export <id> [--scale N] [--size S] [--format F] [--out FILE]` | Save one card at any resolution, size or format |
 | `postline library [--open]` | Show the graphics library folder; `--open` opens the gallery |
 | `postline layouts` | List built-in and custom layouts, tokens and stylesheet in use |
 | `postline publish [--dry-run] [--now ISO] [--catch-up] [--only ID]` | Send everything that is due; CI also uses its two-phase prepare/resume flags |
-| `postline daemon [--every MINUTES]` | Publish continuously on an always-on machine, without GitHub Actions |
+| `postline daemon [--every MINUTES]` | Publish continuously on an always-on machine, without GitHub Actions; runs doctor daily |
+| `postline doctor [--offline] [--notify]` | Check tokens, LinkedIn token expiry, Chromium, the ledger and alerts before a post fails |
+| `postline pr-report --base REF` | Markdown report of the posts a pull request changes; used by the GitHub Action |
 | `postline retry <id> <channel>` | Clear a failed, uncertain or stuck entry so it sends again |
 | `postline mark <id> <channel> <published\|skipped>` | Record an outcome by hand |
 
@@ -192,6 +197,8 @@ Setup for each, including tokens: [docs/guides/channels.md](docs/guides/channels
 - [Channels](docs/guides/channels.md)
 - [Scheduling options](docs/guides/scheduling.md)
 - [Self-hosted scheduling without GitHub Actions](docs/guides/self-hosted-scheduling.md)
+- [Previews](docs/guides/previews.md)
+- [Health checks and alerts](docs/guides/health-and-alerts.md)
 - [Architecture decisions](docs/architecture/README.md)
 
 ## Examples

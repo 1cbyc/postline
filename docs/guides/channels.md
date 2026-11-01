@@ -26,6 +26,7 @@ linkedin:
   # person: "<member id>"     # post as a member instead
   # version: "202609"         # LinkedIn-Version header (YYYYMM)
   # tokenEnv: LINKEDIN_ACCESS_TOKEN
+  # tokenExpires: 2026-12-31  # when the token stops working; doctor warns 14 days ahead
 ```
 
 You need a LinkedIn developer app with the Community Management API product for
@@ -33,10 +34,13 @@ company pages (scope `w_organization_social`), or "Share on LinkedIn" for a memb
 (`w_member_social`). Generate a token for an admin of the page and store it as
 `LINKEDIN_ACCESS_TOKEN`.
 
-LinkedIn tokens expire (60 days by default). Put a reminder in your calendar or
-automate the refresh flow; postline will fail loudly when the token stops working.
+LinkedIn tokens expire (60 days by default) and can't be inspected, so tell
+postline when yours runs out with `tokenExpires:`. `postline doctor` then warns
+14 days ahead, and with alerts configured the daemon tells you on its daily check.
+See [health checks and alerts](health-and-alerts.md).
 
-LinkedIn retires API versions roughly a year after release. postline 0.1.0 defaults
+LinkedIn retires API versions roughly a year after release; `postline doctor`
+warns when the configured version is 10 months old. postline defaults
 to the September 2026 API (`202609`). Check [LinkedIn's versioning page](https://learn.microsoft.com/en-us/linkedin/marketing/versioning)
 before each postline release and update `version:` when migrating deliberately.
 

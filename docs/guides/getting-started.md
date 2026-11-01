@@ -56,6 +56,15 @@ Fill in the drafts. Remove `status: draft` when a post is ready. Run
 `postline lint` as you go. `postline brief` prints the open slots, the rules and
 recent topics in one page, which is useful when someone else writes the copy.
 
+To see each post the way each network will show it, keep a preview open while
+you write:
+
+```sh
+postline preview --open
+```
+
+It reloads when you save. See [previews](previews.md).
+
 ## 5. Publish
 
 Try it locally first:
@@ -70,3 +79,7 @@ option on an always-on machine is:
 ```sh
 postline daemon --every 15
 ```
+
+Before the first real post, run `postline doctor`. It checks your tokens,
+Chromium, the schedule and the ledger, and tells you what to fix. Add a
+`notify:` block to hear about failures: see [health checks and alerts](health-and-alerts.md).

@@ -24,6 +24,8 @@ const GUIDES: readonly { slug: string; label: string }[] = [
   { slug: "channels", label: "Channels" },
   { slug: "scheduling", label: "Scheduling" },
   { slug: "self-hosted-scheduling", label: "Self-hosted scheduling" },
+  { slug: "previews", label: "Previews" },
+  { slug: "health-and-alerts", label: "Health checks and alerts" },
 ];
 
 interface Heading {
