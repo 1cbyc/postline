@@ -12,7 +12,7 @@ postline doctor
 ```
 
 ```text
-postline 0.3.0 doctor: postline.config.yaml
+postline 0.3.1 doctor: postline.config.yaml
 
 ✓ config       loaded postline.config.yaml
 ✓ posts        12 posts, no lint errors

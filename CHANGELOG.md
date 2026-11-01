@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+Same code as 0.3.0, republished under the maintainer's public address. 0.3.0 and
+earlier npm versions recorded a private email in their publish metadata and are
+withdrawn. Projects pinned to 0.3.0 should move to 0.3.1 (`POSTLINE_VERSION` and
+`uses: 1cbyc/postline@v0.3.1` in the workflow).
+
 ## 0.3.0
 
 See it before it ships, and hear about problems before a post fails.
