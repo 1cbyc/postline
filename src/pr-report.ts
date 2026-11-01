@@ -21,13 +21,27 @@ export interface ChangeSet {
   restyled?: string;
 }
 
-/** Project-relative paths changed between `base` and HEAD. */
+function git(root: string, args: string[]): string {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+/**
+ * Project-relative paths this branch changed since it left `base`. Compares
+ * from the merge base, so commits that landed on `base` meanwhile don't count.
+ * A shallow CI checkout has no merge base; there HEAD is the pull request's
+ * merge commit, so comparing its tree with `base` gives the same answer.
+ */
 export function gitChanges(root: string, base: string): string[] {
-  const out = execFileSync("git", ["diff", "--name-only", "--diff-filter=AMR", "--relative", base, "HEAD", "--", "."], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  return out.split("\n").map((line) => line.trim()).filter(Boolean);
+  let range: string[];
+  try {
+    git(root, ["merge-base", base, "HEAD"]);
+    range = [`${base}...HEAD`];
+  } catch {
+    range = [base, "HEAD"];
+  }
+  // -z: paths with unusual characters come back raw instead of quoted.
+  const out = git(root, ["diff", "-z", "--name-only", "--diff-filter=ACDMR", "--relative", ...range, "--", "."]);
+  return out.split("\0").filter(Boolean);
 }
 
 /** Which posts to show for a list of changed project-relative paths. */
@@ -66,6 +80,8 @@ export interface Report {
   changed: number;
   errors: number;
   warnings: number;
+  /** Lint errors in posts this pull request didn't touch. They still block publishing. */
+  otherErrors: number;
 }
 
 function fence(text: string): string {
@@ -91,11 +107,23 @@ export function buildReport(input: ReportInput): Report {
   const findings = changes.posts.flatMap(mine);
   const errors = findings.filter((f) => f.severity === "error").length;
   const warnings = findings.length - errors;
+  const changedSet = new Set(changes.posts);
+  const others = all.filter((f) => f.severity === "error" && !changedSet.has(f.post));
+  const otherPosts = [...new Set(others.map((f) => f.post.id))];
+  const otherNote = others.length
+    ? `> ${others.length} lint error${others.length === 1 ? "" : "s"} in posts this pull request didn't change (${otherPosts
+        .slice(0, 5)
+        .map((id) => `\`${id}\``)
+        .join(", ")}${otherPosts.length > 5 ? ", …" : ""}). Run \`postline lint\`; they won't publish until fixed.`
+    : undefined;
 
   const lines: string[] = ["### postline preview", ""];
   if (changes.posts.length === 0) {
-    lines.push("No posts changed in this pull request.", "", "<!-- postline-no-changes -->");
-    return { markdown: lines.join("\n") + "\n", changed: 0, errors: 0, warnings: 0 };
+    lines.push("No posts changed in this pull request.", "");
+    if (otherNote) lines.push(otherNote, "");
+    // The action only creates a comment when there's something to say.
+    if (!otherNote) lines.push("<!-- postline-no-changes -->");
+    return { markdown: lines.join("\n") + "\n", changed: 0, errors: 0, warnings: 0, otherErrors: others.length };
   }
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   lines.push(
@@ -103,6 +131,7 @@ export function buildReport(input: ReportInput): Report {
     "",
   );
   if (changes.restyled) lines.push(`> ${changes.restyled}.`, "");
+  if (otherNote) lines.push(otherNote, "");
 
   for (const post of shown) {
     const when = post.when ? `${humanLabel(post.when, cfg.timezone)} (${cfg.timezone})` : "unscheduled";
@@ -156,7 +185,7 @@ export function buildReport(input: ReportInput): Report {
     lines.push(`…and ${changes.posts.length - shown.length} more: ${changes.posts.slice(shown.length).map((p) => `\`${p.id}\``).join(", ")}`, "");
   }
   lines.push(`<sub>Rendered by postline${input.sha ? ` for ${input.sha.slice(0, 7)}` : ""}. Run \`postline preview\` to see every channel locally.</sub>`);
-  return { markdown: lines.join("\n") + "\n", changed: changes.posts.length, errors, warnings };
+  return { markdown: lines.join("\n") + "\n", changed: changes.posts.length, errors, warnings, otherErrors: others.length };
 }
 
 /** Copy a rendered card into the images folder under a content-addressed name. */

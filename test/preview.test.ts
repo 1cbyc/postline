@@ -35,7 +35,7 @@ test("the post page shows lint results, the webhook payload and the files output
   });
   const p = post(cfg, "id: p1\nat: 2026-11-05 09:00\nchannels: [hook, blog]\ntopic: launch", "Launch day 🚀");
   const html = postPage(cfg, [p], lint(cfg, [p]), p);
-  assert.match(html, /<code>emoji<\/code>|emoji/);
+  assert.match(html, /<code>emoji<\/code>/);
   assert.match(html, /&quot;delivery&quot;: &quot;p1::hook&quot;/);
   assert.match(html, /site\/posts\/p1\.md/);
   assert.match(html, /title: Launch day/);
@@ -58,6 +58,15 @@ test("the preview server serves the index and post pages on localhost", async ()
     assert.match(page, /<span class="tag">#world<\/span>/);
     assert.equal((await fetch(`${server.url}post/nope`)).status, 404);
     assert.equal((await fetch(`${server.url}card/p1`)).status, 404);
+    const port = new URL(server.url).port;
+    const { request } = await import("node:http");
+    const status = await new Promise<number | undefined>((done) => {
+      request({ host: "127.0.0.1", port, path: "/", headers: { Host: `evil.example:${port}` } }, (res) => {
+        res.resume();
+        done(res.statusCode);
+      }).end();
+    });
+    assert.equal(status, 403);
   } finally {
     await server.close();
   }

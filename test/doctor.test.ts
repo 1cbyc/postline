@@ -93,3 +93,32 @@ test("doctor reports a Chromium that won't start", async () => {
   const checks = await runDoctor({ cfg, posts: [p], now: NOW, env: {}, version: "0.3.0", launchChromium: async () => "could not start Chromium" });
   assert.equal(find(checks, "chromium", /could not start/)?.level, "error");
 });
+
+test("impossible dates such as February 31 are rejected", () => {
+  assert.throws(() => config({ channels: { linkedin: { type: "linkedin", organization: "1", tokenExpires: "2026-02-31" } } }), ConfigError);
+});
+
+test("a LinkedIn 429 is not reported as a healthy token", async () => {
+  const cfg = config({ channels: { linkedin: { type: "linkedin", organization: "1", tokenExpires: "2027-01-01" } } });
+  const p = post(cfg, "id: p1\nat: 2026-11-05 09:00\nchannels: [linkedin]");
+  const fetchImpl = (async () => new Response("", { status: 429 })) as unknown as typeof fetch;
+  const checks = await runDoctor({ cfg, posts: [p], now: NOW, env: { LINKEDIN_ACCESS_TOKEN: "t" }, version: "0.3.0", fetch: fetchImpl });
+  assert.equal(find(checks, "linkedin", /HTTP 429/)?.level, "warn");
+  assert.equal(find(checks, "linkedin", /accepted/), undefined);
+});
+
+test("an attempting entry is normal while a live publish run holds the lock", async () => {
+  const cfg = config({ channels: { hook: { type: "webhook", url: "https://hooks.example/x" } } });
+  const ledger = new Ledger(cfg.stateDir);
+  ledger.set("now", "hook", { status: "attempting" });
+  ledger.save();
+  writeFileSync(join(cfg.stateDir, "publish.lock"), JSON.stringify({ pid: process.pid, host: (await import("node:os")).hostname(), since: NOW.toISOString() }));
+  const checks = await runDoctor({ cfg, posts: [], now: NOW, env: {}, version: "0.3.0" });
+  assert.equal(find(checks, "ledger", /may have gone out/), undefined);
+  assert.equal(find(checks, "lock", /in progress/)?.level, "info");
+});
+
+test("doctor warnings are sent as alerts too", () => {
+  const alerts = doctorAlerts([{ level: "warn", area: "linkedin", message: "access token expires in 9 days" }, { level: "info", area: "x", message: "y" }]);
+  assert.deepEqual(alerts.map((a) => a.message), ["warning: linkedin: access token expires in 9 days"]);
+});

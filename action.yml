@@ -21,7 +21,7 @@ inputs:
 
 outputs:
   errors:
-    description: Lint errors in the changed posts.
+    description: Lint errors in the changed posts plus any in posts the pull request didn't change.
     value: ${{ steps.report.outputs.errors }}
 
 runs:
@@ -72,7 +72,8 @@ runs:
         node "$POSTLINE" pr-report --cwd "$WORKDIR" --base "origin/${BASE_REF}" \
           --images "$dir/images" "${image_url[@]}" --out "$dir/report.md" --json "$dir/summary.json"
 
-        errors=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).errors)' "$dir/summary.json")
+        # Errors in changed posts, plus errors in posts the PR didn't touch (they still block publishing).
+        errors=$(node -e 'const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(s.errors + s.otherErrors)' "$dir/summary.json")
         {
           echo "slug=$slug"
           echo "dir=$dir"
@@ -84,6 +85,7 @@ runs:
         fi
 
     - name: Publish the card images
+      id: images
       if: github.event.pull_request.head.repo.full_name == github.repository
       shell: bash
       env:
@@ -97,7 +99,7 @@ runs:
         set -euo pipefail
         shopt -s nullglob
         files=("$DIR"/images/*)
-        [ ${#files[@]} -gt 0 ] || exit 0
+        if [ ${#files[@]} -eq 0 ]; then echo "pushed=none" >> "$GITHUB_OUTPUT"; exit 0; fi
         remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
         tree="$RUNNER_TEMP/postline-previews-tree"
         # Other jobs may push at the same time; start again from the remote on a conflict.
@@ -114,12 +116,13 @@ runs:
           mkdir -p "$tree/pr-${PR}/${SLUG}"
           cp "${files[@]}" "$tree/pr-${PR}/${SLUG}/"
           git -C "$tree" add -A
-          if git -C "$tree" diff --cached --quiet; then exit 0; fi
+          if git -C "$tree" diff --cached --quiet; then echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           git -C "$tree" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit --quiet -m "previews for #${PR} (${SLUG})"
-          if git -C "$tree" push --quiet "$remote" "HEAD:refs/heads/${BRANCH}"; then exit 0; fi
+          if git -C "$tree" push --quiet "$remote" "HEAD:refs/heads/${BRANCH}"; then echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           sleep $((attempt * 3))
         done
+        echo "pushed=false" >> "$GITHUB_OUTPUT"
         echo "::warning::could not push the card images to ${BRANCH}; the comment will show lint results without images"
 
     - name: Comment on the pull request
@@ -131,10 +134,15 @@ runs:
         PR: ${{ github.event.pull_request.number }}
         SLUG: ${{ steps.report.outputs.slug }}
         DIR: ${{ steps.report.outputs.dir }}
+        PUSHED: ${{ steps.images.outputs.pushed }}
       run: |
         set -euo pipefail
         marker="<!-- postline-preview:${SLUG} -->"
         { echo "$marker"; cat "$DIR/report.md"; } > "$DIR/comment.md"
+        if [ "$PUSHED" = "false" ]; then
+          # The images never reached the branch; don't leave broken links in the comment.
+          sed -i -E 's#^<img src="https://github\.com/[^"]*" width="360" alt="[^"]*">$#_The card image could not be published._#' "$DIR/comment.md"
+        fi
         id=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
           --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"${marker}\"))) | .id" | head -n 1)
         if [ -n "$id" ]; then
@@ -149,5 +157,5 @@ runs:
       env:
         ERRORS: ${{ steps.report.outputs.errors }}
       run: |
-        echo "::error::${ERRORS} lint error(s) in the changed posts; see the postline preview comment"
+        echo "::error::${ERRORS} lint error(s); see the postline preview comment, or run postline lint"
         exit 1

@@ -6,6 +6,10 @@ on:
     paths:
       - "examples/**"
       - "action.yml"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
 
 permissions:
   contents: write

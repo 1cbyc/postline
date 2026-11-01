@@ -56,7 +56,7 @@ Fill in the drafts. Remove `status: draft` when a post is ready. Run
 `postline lint` as you go. `postline brief` prints the open slots, the rules and
 recent topics in one page, which is useful when someone else writes the copy.
 
-To see each post the way each network will show it, keep a preview open while
+To see roughly how each network will show each post, keep a preview open while
 you write:
 
 ```sh

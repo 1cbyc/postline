@@ -96,7 +96,8 @@ font and use `font.file`; it is embedded into the card HTML.
 Secrets never go in the config file. Each channel reads its token from an
 environment variable (see [channels.md](channels.md)). `POSTLINE_CHROMIUM` points
 rendering at a specific Chromium binary. `POSTLINE_NOTIFY_URL` holds the alert
-destination (see [health checks and alerts](health-and-alerts.md)). `NO_COLOR`
+destination and `POSTLINE_NOTIFY_SECRET` signs `json` alerts (both renamable with
+`notify.urlEnv` and `notify.secretEnv`; see [health checks and alerts](health-and-alerts.md)). `NO_COLOR`
 turns off coloured output.
 
 Configuration is validated before any command runs. Invalid dates, unknown status

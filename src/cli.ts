@@ -50,7 +50,8 @@ Commands
                            save one card at any resolution, e.g. --scale 4 for print
   library [--open]         show where saved graphics live; --open opens the gallery
   layouts                  list built-in and custom card layouts
-  pr-report --base REF [--all] [--images DIR] [--image-url URL] [--out FILE]
+  pr-report --base REF [--all] [--images DIR] [--image-url URL] [--no-render]
+            [--out FILE] [--json FILE] [--sha SHA] [--fail-on-error]
                            Markdown report of the posts a pull request changes:
                            rendered cards, lengths per channel and lint results
   preview [--port N] [--open]
@@ -179,9 +180,9 @@ async function publishLocked(cfg: Config, posts: Post[], args: Args, now: Date):
       const alerts: Alert[] = [];
       for (const o of outcomes) {
         if (o.result !== "failed" && o.result !== "uncertain" && o.result !== "blocked") continue;
-        // A new failure has a new ledger timestamp; a blocked entry keeps the same key and is re-sent once a day.
-        const stamp = o.result === "blocked" ? (o.detail ?? "") : (ledger.get(o.post, o.channel)?.updatedAt ?? "");
-        alerts.push({ event: o.result, message: `${o.post} -> ${o.channel}: ${o.detail ?? o.result}`, key: `${o.result}:${o.post}:${o.channel}:${stamp}` });
+        // Keyed on the problem, not the attempt, so a failure that repeats every
+        // run (a card that won't render) is reported once a day.
+        alerts.push({ event: o.result, message: `${o.post} -> ${o.channel}: ${o.detail ?? o.result}`, key: `${o.result}:${o.post}:${o.channel}:${o.detail ?? ""}` });
       }
       await sendAlerts(cfg, alerts, notifyDeps(cfg, now));
     }
@@ -316,13 +317,16 @@ async function main(argv: string[]): Promise<number> {
     // post raises an alert before the next post is due.
     let lastDoctor = 0;
     const task = async (): Promise<number> => {
-      const code = await publishCommand(cwd, str(args, "config"), args);
-      if (Date.now() - lastDoctor >= 24 * 60 * 60 * 1000) {
-        lastDoctor = Date.now();
-        const health = await doctorCommand(cwd, str(args, "config"), { ...args, flags: { ...args.flags, notify: true } }, true);
-        if (health !== 0) console.error(yellow("doctor found problems; run postline doctor for details"));
+      try {
+        return await publishCommand(cwd, str(args, "config"), args);
+      } finally {
+        // Also when publishing throws: that's exactly when doctor's checks matter.
+        if (Date.now() - lastDoctor >= 24 * 60 * 60 * 1000) {
+          lastDoctor = Date.now();
+          const health = await doctorCommand(cwd, str(args, "config"), { ...args, flags: { ...args.flags, notify: true } }, true);
+          if (health !== 0) console.error(yellow("doctor found problems; run postline doctor for details"));
+        }
       }
-      return code;
     };
     try {
       await runDaemon({
@@ -379,10 +383,16 @@ async function main(argv: string[]): Promise<number> {
     else process.stdout.write(report.markdown);
     const json = str(args, "json");
     if (json) {
-      const summary = { changed: report.changed, errors: report.errors, warnings: report.warnings, images: [...images.values()].map((i) => i.name) };
+      const summary = {
+        changed: report.changed,
+        errors: report.errors,
+        warnings: report.warnings,
+        otherErrors: report.otherErrors,
+        images: [...images.values()].map((i) => i.name),
+      };
       writeFileSync(resolve(cwd, json), JSON.stringify(summary) + "\n");
     }
-    return args.flags["fail-on-error"] && report.errors > 0 ? 1 : 0;
+    return args.flags["fail-on-error"] && report.errors + report.otherErrors > 0 ? 1 : 0;
   }
 
   if (cmd === "preview") {

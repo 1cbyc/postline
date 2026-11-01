@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildReport, selectChanges } from "../src/pr-report.js";
-import { config, post } from "./helpers.js";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { buildReport, gitChanges, selectChanges } from "../src/pr-report.js";
+import { config, post, tmp } from "./helpers.js";
 
 function project() {
   const cfg = config({ channels: { linkedin: { type: "linkedin", organization: "1" }, bluesky: { type: "bluesky", maxChars: 20 } } });
@@ -51,9 +54,39 @@ test("text containing backticks gets a longer fence", () => {
 });
 
 test("no changed posts says so and leaves a marker the action uses to skip commenting", () => {
-  const { cfg, a } = project();
-  const { markdown, changed } = buildReport({ cfg, posts: [a], changes: { posts: [] }, images: new Map(), renderErrors: new Map() });
+  const { cfg, b } = project();
+  const { markdown, changed } = buildReport({ cfg, posts: [b], changes: { posts: [] }, images: new Map(), renderErrors: new Map() });
   assert.equal(changed, 0);
   assert.match(markdown, /No posts changed/);
   assert.match(markdown, /<!-- postline-no-changes -->/);
+});
+
+test("lint errors in posts the pull request didn't change are counted separately", () => {
+  const { cfg, a, b } = project();
+  const report = buildReport({ cfg, posts: [a, b], changes: { posts: [b] }, images: new Map(), renderErrors: new Map() });
+  assert.equal(report.errors, 0);
+  assert.ok(report.otherErrors >= 1);
+  assert.match(report.markdown, /in posts this pull request didn't change \(`a`\)/);
+  const none = buildReport({ cfg, posts: [a, b], changes: { posts: [] }, images: new Map(), renderErrors: new Map() });
+  assert.doesNotMatch(none.markdown, /postline-no-changes/);
+});
+
+test("changes are measured from the merge base, not the base branch's tip", () => {
+  const root = tmp();
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: root, encoding: "utf8" });
+  git("init", "-q", "-b", "main");
+  mkdirSync(join(root, "posts"));
+  writeFileSync(join(root, "posts", "old.md"), "old\n");
+  git("add", ".");
+  git("commit", "-qm", "base");
+  git("checkout", "-qb", "feature");
+  writeFileSync(join(root, "posts", "mine é.md"), "mine\n");
+  git("add", ".");
+  git("commit", "-qm", "feature");
+  git("checkout", "-q", "main");
+  writeFileSync(join(root, "posts", "theirs.md"), "theirs\n");
+  git("add", ".");
+  git("commit", "-qm", "main moved on");
+  git("checkout", "-q", "feature");
+  assert.deepEqual(gitChanges(root, "main"), ["posts/mine é.md"]);
 });

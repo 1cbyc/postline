@@ -57,9 +57,13 @@ jobs:
 
 How it works:
 
-- Only posts the pull request adds or changes are shown. If the config, design
-  tokens, stylesheet, a custom layout or the logo changes, every card may look
-  different, so all posts are shown (the first 12 in full).
+- Only posts the pull request adds or changes are shown in full. Lint errors in
+  other posts are listed in one line and still fail the check with
+  `fail-on-error`, because they block publishing.
+- Changes are measured from where the branch left the base branch, so posts
+  changed on `main` in the meantime don't show up.
+- If the config, design tokens, stylesheet, a custom layout or the logo changes,
+  every card may look different, so all posts are shown (the first 12 in full).
 - GitHub comments can only show images from a URL, so the cards are pushed to a
   `postline-previews` branch and the comment links to them. That branch only
   holds preview images and can be deleted at any time.

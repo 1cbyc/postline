@@ -30,7 +30,7 @@ out, or the same posts on three networks. postline gives you:
 - **Your design system, not ours.** Point it at your design tokens, add your own CSS, or write your own card layouts in HTML.
 - **Every graphic kept.** A full-quality copy of each card is saved on your computer with a gallery to browse them later.
 - **Rules that block bad posts.** Hashtag limits, banned phrases, allowed link domains, emoji policy, character limits per network, and a check for broken text encoding.
-- **See it before it ships.** `postline preview` shows each post the way each network will, and the GitHub Action comments rendered cards and lint results on every pull request.
+- **See it before it ships.** `postline preview` approximates how each network will show each post, and the GitHub Action comments rendered cards and lint results on pull requests that change posts.
 - **Problems found early.** `postline doctor` catches expiring LinkedIn tokens, retired API versions and stuck posts, and alerts go to Slack, Discord, ntfy or your own endpoint.
 - **Boring, safe publishing.** Official APIs only. A post is sent at most once; if a run dies mid-send or the network gives no clear answer, postline stops and asks instead of guessing.
 

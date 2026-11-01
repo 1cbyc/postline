@@ -276,7 +276,9 @@ function optionalDate(value: unknown, label: string): string | undefined {
   if (value == null) return undefined;
   // YAML reads an unquoted 2026-12-31 as a Date.
   const text = value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : value;
-  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+  // Date.parse rolls 2026-02-31 over to March, so check it round-trips.
+  const parsed = typeof text === "string" ? new Date(`${text}T00:00:00Z`) : undefined;
+  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || !parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) {
     throw new ConfigError(`${label} must be a date like 2026-12-31`);
   }
   return text;

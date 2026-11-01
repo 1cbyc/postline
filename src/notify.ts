@@ -50,9 +50,9 @@ export function notifyUrl(notify: NotifyConfig, env: NodeJS.ProcessEnv): string 
 }
 
 function title(alerts: Alert[], brand: string): string {
+  const n = alerts.length;
   const doctor = alerts.every((a) => a.event === "doctor");
-  if (doctor) return `postline (${brand}): doctor found ${alerts.length} problem${alerts.length === 1 ? "" : "s"}`;
-  return `postline (${brand}): ${alerts.length} post${alerts.length === 1 ? "" : "s"} need${alerts.length === 1 ? "s" : ""} attention`;
+  return `postline (${brand}): ${n} ${doctor ? "health" : "publishing"} problem${n === 1 ? "" : "s"}`;
 }
 
 /** Request for one batch of alerts in the configured format. */
@@ -73,7 +73,8 @@ export function alertRequest(
     case "discord": {
       let content = `**${heading}**\n${lines.map((l) => `- ${l}`).join("\n")}`;
       if (content.length > DISCORD_MAX) content = `${content.slice(0, DISCORD_MAX - 1)}…`;
-      return { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) };
+      // Error text comes from remote responses; it must not be able to ping anyone.
+      return { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, allowed_mentions: { parse: [] } }) };
     }
     case "ntfy":
       // ntfy reads the title from a header; header values must be ASCII.
@@ -98,19 +99,22 @@ export function alertRequest(
 export async function sendAlerts(cfg: Config, alerts: Alert[], deps: NotifyDeps): Promise<number> {
   const notify = cfg.notify;
   if (!notify || alerts.length === 0) return 0;
-  const url = notifyUrl(notify, deps.env);
-  if (!url) {
-    deps.log(`! notify: ${notify.urlEnv} is not set, so ${alerts.length} alert${alerts.length === 1 ? " was" : "s were"} not sent`);
-    return 0;
-  }
 
   const now = deps.now.getTime();
   const state = readState(cfg);
   for (const [key, sent] of Object.entries(state)) {
     if (now - Date.parse(sent) > FORGET_MS) delete state[key];
   }
-  const due = alerts.filter((a) => notify.on.includes(a.event) && !(state[a.key] && now - Date.parse(state[a.key]!) < REMIND_MS));
+  const due = alerts.filter((a) => {
+    const sent = state[a.key];
+    return notify.on.includes(a.event) && !(sent && now - Date.parse(sent) < REMIND_MS);
+  });
   if (due.length === 0) return 0;
+  const url = notifyUrl(notify, deps.env);
+  if (!url) {
+    deps.log(`! notify: ${notify.urlEnv} is not set, so ${due.length} alert${due.length === 1 ? " was" : "s were"} not sent`);
+    return 0;
+  }
 
   try {
     const { headers, body } = alertRequest(notify, due, cfg.brand.name, deps.env);

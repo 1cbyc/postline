@@ -283,6 +283,22 @@ function errorPage(error: unknown): string {
   );
 }
 
+/** Changes whenever the config or any design file a card depends on changes. */
+function designSignature(cfg: Config): string {
+  const files = [cfg.file, cfg.design.tokensFile, cfg.design.stylesheet, ...Object.values(cfg.design.layouts), cfg.brand.logo ? resolve(cfg.root, cfg.brand.logo) : undefined];
+  return files
+    .filter((f): f is string => typeof f === "string")
+    .map((f) => `${f}:${existsSync(f) ? statSync(f).mtimeMs : "missing"}`)
+    .join("|");
+}
+
+/** Only answer requests addressed to this machine, so DNS rebinding can't read drafts. */
+function localHostHeader(value: string | undefined, port: number): boolean {
+  if (!value) return false;
+  const allowed = new Set(["127.0.0.1", "localhost", "[::1]"].map((h) => `${h}:${port}`));
+  return allowed.has(value.toLowerCase());
+}
+
 export interface PreviewOptions {
   cwd: string;
   configFile?: string;
@@ -300,7 +316,7 @@ export interface PreviewServer {
 export async function startPreview(opts: PreviewOptions): Promise<PreviewServer> {
   const host = opts.host ?? "127.0.0.1";
   const clients = new Set<ServerResponse>();
-  let renderer: { configMtime: number; file: string; instance: Renderer } | undefined;
+  let renderer: { signature: string; instance: Renderer } | undefined;
   let queue: Promise<unknown> = Promise.resolve();
 
   const project = (): { cfg: Config; posts: Post[]; findings: Finding[] } => {
@@ -312,10 +328,10 @@ export async function startPreview(opts: PreviewOptions): Promise<PreviewServer>
   // Renders run one at a time and reuse one browser until the config changes.
   const render = (cfg: Config, post: Post): Promise<string> => {
     const job = queue.then(async () => {
-      const mtime = statSync(cfg.file).mtimeMs;
-      if (!renderer || renderer.configMtime !== mtime || renderer.file !== cfg.file) {
+      const signature = designSignature(cfg);
+      if (!renderer || renderer.signature !== signature) {
         await renderer?.instance.close();
-        renderer = { configMtime: mtime, file: cfg.file, instance: new Renderer(cfg) };
+        renderer = { signature, instance: new Renderer(cfg) };
       }
       return (await renderer.instance.render(post)).file;
     });
@@ -328,7 +344,9 @@ export async function startPreview(opts: PreviewOptions): Promise<PreviewServer>
     res.end(body);
   };
 
+  let boundPort = opts.port;
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (!localHostHeader(req.headers.host, boundPort)) return send(res, 403, "text/plain; charset=utf-8", "postline preview only answers localhost");
     const url = new URL(req.url ?? "/", `http://${host}`);
     if (url.pathname === "/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
@@ -372,7 +390,16 @@ export async function startPreview(opts: PreviewOptions): Promise<PreviewServer>
     });
   });
 
-  // Watch the project and tell open pages to reload.
+  await new Promise<void>((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(opts.port, host, () => resolveListen());
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : opts.port;
+  boundPort = port;
+
+  // Watch the project and tell open pages to reload. Started only once the
+  // server is listening, so a failed start leaves nothing running.
   const watchers: FSWatcher[] = [];
   let timer: NodeJS.Timeout | undefined;
   const changed = (): void => {
@@ -384,24 +411,20 @@ export async function startPreview(opts: PreviewOptions): Promise<PreviewServer>
   try {
     const cfg = loadConfig(opts.cwd, opts.configFile);
     const ignore = [cfg.outDir, cfg.stateDir];
-    watchers.push(
-      watch(cfg.root, { recursive: true }, (_event, name) => {
-        if (!name) return changed();
-        const path = `${cfg.root}/${String(name)}`;
-        if (ignore.some((dir) => path.startsWith(dir)) || /(^|\/)(node_modules|\.git)(\/|$)/.test(String(name))) return;
-        changed();
-      }),
-    );
+    const watcher = watch(cfg.root, { recursive: true }, (_event, name) => {
+      if (!name) return changed();
+      const path = `${cfg.root}/${String(name)}`;
+      if (ignore.some((dir) => path.startsWith(dir)) || /(^|\/)(node_modules|\.git)(\/|$)/.test(String(name))) return;
+      changed();
+    });
+    watcher.on("error", (error) => {
+      opts.log(`! live reload stopped: ${error.message}`);
+      watcher.close();
+    });
+    watchers.push(watcher);
   } catch (error) {
     opts.log(`! live reload is off: ${(error as Error).message}`);
   }
-
-  await new Promise<void>((resolveListen, reject) => {
-    server.once("error", reject);
-    server.listen(opts.port, host, () => resolveListen());
-  });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : opts.port;
 
   return {
     url: `http://${host}:${port}/`,

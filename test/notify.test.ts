@@ -26,13 +26,14 @@ test("notify config is validated", () => {
 test("each format builds the request that service expects", () => {
   const base = { urlEnv: "U", secretEnv: "S", on: ["failed" as const] };
   const slack = JSON.parse(alertRequest({ ...base, format: "slack" }, alerts, "Acme", {}).body);
-  assert.match(slack.text, /^\*postline \(Acme\): 2 posts need attention\*\n• uncertain: p1/);
+  assert.match(slack.text, /^\*postline \(Acme\): 2 publishing problems\*\n• uncertain: p1/);
 
   const discord = JSON.parse(alertRequest({ ...base, format: "discord" }, alerts, "Acme", {}).body);
-  assert.match(discord.content, /^\*\*postline \(Acme\)/);
+  assert.match(discord.content, /^\*\*postline \(Acme\): 2 publishing problems/);
+  assert.deepEqual(discord.allowed_mentions, { parse: [] });
 
   const ntfy = alertRequest({ ...base, format: "ntfy" }, alerts, "Acmé", {});
-  assert.equal(ntfy.headers.Title, "postline (Acm?): 2 posts need attention");
+  assert.equal(ntfy.headers.Title, "postline (Acm?): 2 publishing problems");
   assert.equal(ntfy.body, "uncertain: p1 -> linkedin: timed out\nfailed: p2 -> bluesky: HTTP 400");
 
   const json = alertRequest({ ...base, format: "json" }, alerts, "Acme", { S: "secret" });
@@ -93,4 +94,11 @@ test("a missing URL is reported instead of sending", async () => {
   });
   assert.equal(result, 0);
   assert.match(lines[0]!, /POSTLINE_NOTIFY_URL is not set/);
+});
+
+test("a missing URL isn't reported for alerts that wouldn't be sent anyway", async () => {
+  const cfg = config({ notify: { on: ["doctor"] } });
+  const lines: string[] = [];
+  await sendAlerts(cfg, alerts, { env: {}, fetch: globalThis.fetch, root: cfg.root, now: new Date(), log: (l) => lines.push(l) });
+  assert.deepEqual(lines, []);
 });

@@ -90,7 +90,7 @@ async function onlineCheck(name: string, ch: ChannelConfig, deps: AdapterDeps): 
         // 403 means the token is valid but lacks read access, which posting doesn't need.
         if (res.status === 401) return { level: "error", area: name, message: "LinkedIn rejected the access token (HTTP 401). It has expired or been revoked" };
         if (res.status === 426) return { level: "error", area: name, message: `LinkedIn no longer supports API version ${ch.version} (HTTP 426)` };
-        if (res.status >= 500) return { level: "warn", area: name, message: `could not check the token: LinkedIn returned HTTP ${res.status}` };
+        if (!res.ok && res.status !== 403) return { level: "warn", area: name, message: `could not check the token: LinkedIn returned HTTP ${res.status}` };
         return { level: "ok", area: name, message: "LinkedIn accepted the access token" };
       }
       case "bluesky": {
@@ -185,12 +185,26 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
     if (checks.length === before) checks.push({ level: "ok", area: name, message: `${ch.type} channel is set up` });
   }
 
+  // A live publish run legitimately holds entries in "attempting".
+  const lock = join(cfg.stateDir, "publish.lock");
+  let lockHolder: { pid?: number; host?: string; since?: string } | undefined;
+  let lockReadable = true;
+  if (existsSync(lock)) {
+    try {
+      lockHolder = JSON.parse(readFileSync(lock, "utf8")) as { pid?: number; host?: string; since?: string };
+    } catch {
+      lockReadable = false;
+    }
+  }
+  const publishRunning = Boolean(lockHolder && lockHolder.host === hostname() && typeof lockHolder.pid === "number" && processAlive(lockHolder.pid));
+
   // Ledger.
   try {
     const ledger = new Ledger(cfg.stateDir);
     let stuck = 0;
     for (const [key, entry] of ledger.all()) {
       const [post, channel] = key.split("::");
+      if (entry.status === "attempting" && publishRunning) continue;
       if (entry.status === "attempting" || entry.status === "uncertain") {
         stuck++;
         checks.push({
@@ -208,19 +222,14 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
     checks.push({ level: "error", area: "ledger", message: (error as Error).message });
   }
 
-  const lock = join(cfg.stateDir, "publish.lock");
-  if (existsSync(lock)) {
-    try {
-      const holder = JSON.parse(readFileSync(lock, "utf8")) as { pid?: number; host?: string; since?: string };
-      const alive = holder.host === hostname() && typeof holder.pid === "number" && processAlive(holder.pid);
-      checks.push(
-        alive
-          ? { level: "info", area: "lock", message: `a publish run (pid ${holder.pid}) is in progress since ${holder.since}` }
-          : { level: "warn", area: "lock", message: `${lock} was left by pid ${holder.pid} on ${holder.host}; delete it if nothing is running` },
-      );
-    } catch {
-      checks.push({ level: "warn", area: "lock", message: `${lock} exists but is unreadable; delete it if nothing is running` });
-    }
+  if (lockHolder) {
+    checks.push(
+      publishRunning
+        ? { level: "info", area: "lock", message: `a publish run (pid ${lockHolder.pid}) is in progress since ${lockHolder.since}` }
+        : { level: "warn", area: "lock", message: `${lock} was left by pid ${lockHolder.pid} on ${lockHolder.host}; delete it if nothing is running` },
+    );
+  } else if (!lockReadable) {
+    checks.push({ level: "warn", area: "lock", message: `${lock} exists but is unreadable; delete it if nothing is running` });
   }
 
   // Scheduler.
@@ -248,9 +257,12 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
   return checks;
 }
 
-/** Doctor errors as alerts, keyed so the same problem is sent once a day. */
+/**
+ * Doctor errors and warnings as alerts (warnings include the early token-expiry
+ * notice), keyed so the same problem is sent once a day.
+ */
 export function doctorAlerts(checks: Check[]): Alert[] {
   return checks
-    .filter((c) => c.level === "error")
-    .map((c) => ({ event: "doctor", message: `${c.area}: ${c.message}`, key: `doctor:${c.area}:${c.message}` }));
+    .filter((c) => c.level === "error" || c.level === "warn")
+    .map((c) => ({ event: "doctor", message: `${c.level === "warn" ? "warning: " : ""}${c.area}: ${c.message}`, key: `doctor:${c.area}:${c.message}` }));
 }
