@@ -1,7 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   // A Worker that only serves static assets: no script, no Pages.
-  "name": "postline-site",
+  // Must match the Worker that Workers Builds is connected to in the dashboard.
+  "name": "postline",
+  // The Nidfultechnologies account, which owns the Worker. Not a secret; it stops
+  // wrangler asking which account to use when you're logged into several.
+  "account_id": "66325b84ab3d7f68924034bdf5227e65",
   "compatibility_date": "2026-10-30",
   "assets": {
     "directory": "./dist",

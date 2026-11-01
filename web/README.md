@@ -18,7 +18,7 @@ npm run dev       # build, then serve on http://localhost:8787 with wrangler
 npm run deploy    # build, then deploy to Cloudflare
 ```
 
-Node 22.18 or newer runs `scripts/build.ts` directly.
+Node 22.6 or newer runs `scripts/build.ts` directly (with `--experimental-strip-types`).
 
 ## Layout
 
@@ -36,6 +36,17 @@ third-party script, font or image host, update the CSP there.
 
 ## Deploying
 
-`npm run deploy` attaches `postline.nsisong.com` as a custom domain, so the
-`nsisong.com` zone must be in the Cloudflare account wrangler is logged into
-(`npx wrangler whoami`). Cloudflare creates the DNS record and certificate.
+The repository is connected to the `postline` Worker with Cloudflare Workers
+Builds, so pushes to `main` deploy automatically. Its build settings
+(Worker > Settings > Builds) must be:
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `web` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Non-production branch deploy command | `npx wrangler versions upload` |
+
+To deploy by hand instead, run `npm run deploy`. It attaches `postline.nsisong.com`
+as a custom domain, so the `nsisong.com` zone must be in the account set by
+`account_id` in `wrangler.jsonc`. Cloudflare creates the DNS record and certificate.
