@@ -32,11 +32,20 @@ export function luminance({ r, g, b }: Rgb): number {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
 
+/** `top` drawn at `alpha` opacity over `bottom`, as CSS color-mix(top alpha, bottom) does in sRGB. */
+export function blend(top: Rgb, bottom: Rgb, alpha: number): Rgb {
+  const mix = (a: number, b: number) => Math.round(a * alpha + b * (1 - alpha));
+  return { r: mix(top.r, bottom.r), g: mix(top.g, bottom.g), b: mix(top.b, bottom.b) };
+}
+
+export function ratio(fg: Rgb, bg: Rgb): number {
+  const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 /** WCAG 2 contrast ratio, from 1 to 21. Undefined when either colour can't be read. */
 export function contrastRatio(foreground: string, background: string): number | undefined {
   const fg = parseColor(foreground);
   const bg = parseColor(background);
-  if (!fg || !bg) return undefined;
-  const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a) as [number, number];
-  return (hi + 0.05) / (lo + 0.05);
+  return fg && bg ? ratio(fg, bg) : undefined;
 }

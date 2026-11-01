@@ -147,11 +147,12 @@ Cards render with JavaScript turned off, and the page can only load:
 
 - inline `data:` URLs (the logo and embedded fonts are already inlined),
 - the host in `brand.font.url` (plus `fonts.gstatic.com` for Google Fonts),
-- hosts you list under `card.allowedHosts`, over HTTPS.
+- hosts you list under `card.allowedHosts`.
 
+Both are reached over HTTPS only; `brand.font.url` must be an `https://` URL.
 Everything else is blocked. That matters because post text ends up in the page,
-and `{{{raw}}}` inserts it without escaping: a post can't run scripts or send
-data anywhere while its card renders. If a template loads images from your own
+and a triple-stash tag such as `{{{data.quote}}}` inserts it without escaping: a
+post can't run scripts or send data anywhere while its card renders. If a template loads images from your own
 CDN, allow it:
 
 ```yaml

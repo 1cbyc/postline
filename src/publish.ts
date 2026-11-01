@@ -71,6 +71,9 @@ async function mediaFor(post: Post, opts: PublishOptions, cache: Map<string, Med
 }
 
 export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opts: PublishOptions): Promise<Outcome[]> {
+  // The run's clock: starts at opts.now (which --now and tests set) and moves with real time.
+  const startedAt = Date.now();
+  const clock = (): Date => new Date(opts.now.getTime() + (Date.now() - startedAt));
   const outcomes: Outcome[] = [];
   const broken = new Set(lint(cfg, posts).filter((f) => f.severity === "error").map((f) => f.post.id));
   const media = new Map<string, MediaInput | undefined>();
@@ -166,13 +169,15 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
     }
     try {
       const adapter = createAdapter(channel, chCfg, opts.deps);
-      const firstAttemptAt = ledger.get(post.id, channel)?.firstAttemptAt;
+      const pending = ledger.get(post.id, channel)?.retryBefore;
       const res = await adapter.publish({
         post,
         channel,
         text,
         ...(image === undefined ? {} : { image }),
-        ...(firstAttemptAt ? { firstAttemptAt: new Date(firstAttemptAt) } : {}),
+        attemptStartedAt: clock(),
+        ...(pending ? { retryBefore: new Date(pending) } : {}),
+        now: clock,
       });
       ledger.set(post.id, channel, { status: "published", remoteId: res.id, ...(res.url === undefined ? {} : { url: res.url }) }, new Date());
       outcomes.push({ post: post.id, channel, result: "published", detail: res.url ?? res.id });
@@ -196,7 +201,7 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
         opts.log(`? ${tag}: ${message}; check ${channel}, then run "postline mark" or "postline retry"`);
       } else {
         const retryBefore = err instanceof PublishError ? err.retryBefore : undefined;
-        if (retryBefore && opts.now.getTime() >= retryBefore.getTime()) {
+        if (retryBefore && clock().getTime() >= retryBefore.getTime()) {
           // Retrying would no longer be safe, so this is as unclear as any other.
           ledger.set(post.id, channel, { status: "uncertain", error: `${message} (it may have gone out)` }, new Date());
           outcomes.push({ post: post.id, channel, result: "uncertain", detail: message });

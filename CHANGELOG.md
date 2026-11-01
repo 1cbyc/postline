@@ -4,13 +4,13 @@
 
 Safer rendering, and fewer ways for a post to go wrong.
 
-- Cards render with JavaScript off and can only load from the font host and hosts listed in `card.allowedHosts`. Post text inserted with `{{{raw}}}` can no longer run scripts or send data anywhere during rendering
+- Cards render with JavaScript off and can only load `data:` URLs, the font host and hosts listed in `card.allowedHosts`, over HTTPS. Post text inserted unescaped with a triple-stash tag can no longer run scripts or send data anywhere during rendering. `brand.font.url` must now be `https://`
 - A card that can never render now counts towards `maxAttempts` and stops retrying, instead of failing on every run
-- Mastodon: an unclear failure is retried only while Mastodon still remembers the idempotency key (50 minutes from the first attempt); after that it's recorded as `uncertain`
+- Mastodon: an unclear failure is retried only while Mastodon still remembers the idempotency key (50 minutes from the attempt that had the unclear result). The deadline is kept through later failures and checked again just before sending; after it, the post is recorded as `uncertain`
 - A process that finds the publish lock just created by another waits briefly for its details, and takes the lock if it's released meanwhile, instead of reporting it as unreadable
 - Webhook replies that claim to be JSON but don't parse are logged as a warning instead of silently ignored
 - `rules.requireAlt` makes missing alt text on image posts an error
-- `postline doctor` checks brand colours against WCAG AA contrast
+- `postline doctor` checks brand colours against WCAG AA contrast as the layouts draw them, and lists colours it can't read
 
 ## 0.3.1
 

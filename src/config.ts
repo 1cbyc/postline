@@ -507,6 +507,8 @@ export function normalizeConfig(
   }
 
   const fontUrl = fontRaw.url == null ? undefined : httpUrl(fontRaw.url, "brand.font.url");
+  // Cards may only load over HTTPS while rendering, so an http:// font would never load.
+  if (fontUrl && !fontUrl.toLowerCase().startsWith("https://")) throw new ConfigError("brand.font.url must use https://");
   const fontFile = optionalString(fontRaw.file, "brand.font.file");
   if (fontUrl && fontFile) throw new ConfigError("brand.font must not set both url and file");
   const notify = normalizeNotify(raw.notify);

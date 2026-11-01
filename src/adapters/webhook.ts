@@ -51,7 +51,7 @@ export function webhook(name: string, cfg: WebhookChannelConfig, deps: AdapterDe
           const parsed: unknown = JSON.parse(raw);
           if (typeof parsed === "object" && parsed !== null) reply = parsed;
         } catch {
-          if ((res.headers.get("content-type") ?? "").includes("json")) warning = `${name}: the receiver's reply is not valid JSON, so its id and url were ignored`;
+          if ((res.headers.get("content-type") ?? "").toLowerCase().includes("json")) warning = `${name}: the receiver's reply is not valid JSON, so its id and url were ignored`;
         }
       }
       const id = typeof reply.id === "string" ? reply.id : delivery;

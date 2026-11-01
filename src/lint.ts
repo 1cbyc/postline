@@ -98,7 +98,7 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
       const ext = extname(post.image).toLowerCase();
       if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") add(post, "image-format", "error", "image must be PNG or JPEG");
       if (!post.alt?.trim()) {
-        add(post, "image-alt", cfg.rules.requireAlt ? "error" : "warn", "set alt: for the image, so screen reader users know what it shows");
+        add(post, "image-alt", cfg.rules.requireAlt ? "error" : "warn", "set alt text for the image (alt:), so screen reader users know what it shows");
       }
     }
     if (post.card) {

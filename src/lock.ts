@@ -44,6 +44,7 @@ export async function withStateLock<T>(stateDir: string, fn: () => Promise<T>): 
   const me: Holder = { pid: process.pid, host: hostname(), since: new Date().toISOString() };
 
   let fd: number | undefined;
+  let released = 0;
   for (let tries = 0; fd === undefined; tries++) {
     try {
       fd = openSync(file, "wx");
@@ -61,8 +62,9 @@ export async function withStateLock<T>(stateDir: string, fn: () => Promise<T>): 
             `if it is no longer running, delete ${file}`,
         );
       }
-      // Released while we waited: try to take it again.
-      if (!holder && !existsSync(file)) {
+      // Released while we waited: try to take it again, a few times at most.
+      if (!holder && !existsSync(file) && released < 3) {
+        released++;
         tries = -1;
         continue;
       }

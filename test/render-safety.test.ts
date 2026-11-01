@@ -38,3 +38,7 @@ test("missing alt text is a warning, or an error with rules.requireAlt", () => {
     assert.equal(lint(cfg, [p]).find((f) => f.rule === "image-alt")?.severity, severity);
   }
 });
+
+test("an http:// brand font is rejected, because cards only load over HTTPS", () => {
+  assert.throws(() => config({ brand: { name: "T", font: { family: "X", url: "http://fonts.example/x.css" } } }), /https/);
+});

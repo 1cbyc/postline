@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { ChannelConfig, Config, LinkedInChannelConfig } from "./config.js";
 import type { Post } from "./content.js";
 import { lint } from "./lint.js";
-import { contrastRatio } from "./contrast.js";
+import { blend, parseColor, ratio, type Rgb } from "./contrast.js";
 import { Ledger } from "./ledger.js";
 import { humanLabel } from "./time.js";
 import { notifyUrl, type Alert } from "./notify.js";
@@ -157,26 +157,44 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
     .sort((a, b) => a.when!.getTime() - b.when!.getTime())[0];
   if (next?.when) checks.push({ level: "info", area: "posts", message: `next post: ${next.id} at ${humanLabel(next.when, cfg.timezone)}` });
 
-  // Brand colours: card text has to be readable. WCAG AA asks for 4.5:1 for
-  // body text; headlines are large, so 3:1 is the floor there.
+  // Brand colours, as the built-in layouts draw them. WCAG AA asks for 4.5:1
+  // for text; the eyebrow, numbers and footer URL are large and bold, so 3:1.
   const { colors } = cfg.brand;
-  const pairs: { name: string; fg: string; bg: string; min: number }[] = [
-    { name: "text on background", fg: colors.text, bg: colors.background, min: 4.5 },
-    { name: "muted text on background", fg: colors.muted, bg: colors.background, min: 4.5 },
-    { name: "text on panels", fg: colors.text, bg: colors.panel, min: 4.5 },
-    { name: "accent on background", fg: colors.accent, bg: colors.background, min: 3 },
-    ...(["ok", "warn", "bad"] as const).map((tone) => ({ name: `${tone} chip text`, fg: colors[tone][1], bg: colors[tone][0], min: 4.5 })),
+  const read = (value: string) => parseColor(value);
+  const bg = read(colors.background);
+  const panel = read(colors.panel);
+  const accent = read(colors.accent);
+  type Pair = { name: string; fg: Rgb | undefined; bg: Rgb | undefined; min: number };
+  const pairs: Pair[] = [
+    { name: "text on background", fg: read(colors.text), bg, min: 4.5 },
+    { name: "muted text on background", fg: read(colors.muted), bg, min: 4.5 },
+    { name: "text on panels", fg: read(colors.text), bg: panel, min: 4.5 },
+    { name: "muted text on panels", fg: read(colors.muted), bg: panel, min: 4.5 },
+    { name: "accent on background", fg: accent, bg, min: 3 },
+    // Numbered badges: the accent over 8% accent on the panel.
+    { name: "accent in number badges", fg: accent, bg: accent && panel ? blend(accent, panel, 0.08) : undefined, min: 3 },
+    // Chips: the tone's text over 35% of its fill on the panel.
+    ...(["ok", "warn", "bad"] as const).map((tone): Pair => {
+      const fill = read(colors[tone][0]);
+      return { name: `${tone} chip text`, fg: read(colors[tone][1]), bg: fill && panel ? blend(fill, panel, 0.35) : undefined, min: 4.5 };
+    }),
   ];
   const weak: string[] = [];
-  let checked = 0;
+  const unverified: string[] = [];
   for (const pair of pairs) {
-    const ratio = contrastRatio(pair.fg, pair.bg);
-    if (ratio === undefined) continue;
-    checked++;
-    if (ratio < pair.min) weak.push(`${pair.name} ${ratio.toFixed(1)}:1 (needs ${pair.min}:1)`);
+    if (!pair.fg || !pair.bg) {
+      unverified.push(pair.name);
+      continue;
+    }
+    const r = ratio(pair.fg, pair.bg);
+    if (r < pair.min) weak.push(`${pair.name} ${r.toFixed(1)}:1 (needs ${pair.min}:1)`);
   }
+  const checked = pairs.length - unverified.length;
   if (weak.length) checks.push({ level: "warn", area: "brand", message: `colours below WCAG AA contrast: ${weak.join("; ")}` });
   else if (checked) checks.push({ level: "ok", area: "brand", message: `${checked} colour pairs meet WCAG AA contrast` });
+  if (unverified.length) {
+    checks.push({ level: "info", area: "brand", message: `couldn't check ${unverified.join(", ")}: write those colours as hex or rgb() to have them checked` });
+  }
 
   // Rendering.
   if (posts.some((p) => p.card) && opts.launchChromium) {

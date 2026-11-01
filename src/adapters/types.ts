@@ -13,8 +13,12 @@ export interface PublishInput {
   channel: string;
   text: string;
   image?: MediaInput;
-  /** When the first attempt for this post and channel started; this attempt if it's the first. */
-  firstAttemptAt?: Date;
+  /** When this attempt started, on the publish run's clock. */
+  attemptStartedAt?: Date;
+  /** A deadline left by an earlier unclear send; past it, sending again could duplicate. */
+  retryBefore?: Date;
+  /** The publish run's clock, for checks made just before the post is sent. */
+  now?: () => Date;
 }
 
 export interface PublishResult {

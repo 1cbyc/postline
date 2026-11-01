@@ -100,7 +100,7 @@ test("a failure before the create call stays retryable", async () => {
   assert.ok(calls.every((url) => !url.endsWith("/posts")));
 });
 
-test("a card that fails to render is not marked as attempted", async () => {
+test("a card that fails to render counts as an attempt but sends nothing", async () => {
   const cfg = config({ channels: { hook: { type: "webhook", url: "https://hooks.example/x" } } });
   const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [hook]\ncard:\n  headline: [One]");
   const broken = {
@@ -240,5 +240,56 @@ test("a webhook whose JSON reply doesn't parse still counts as sent, with a warn
   const lines: string[] = [];
   const out = await publishDue(cfg, [p], new Ledger(cfg.stateDir), opts(f, "2026-10-27T13:05:00Z", { log: (l) => lines.push(l) }));
   assert.deepEqual(out.map((o) => o.result), ["published"]);
+  assert.ok(lines.some((l) => /not valid JSON/.test(l)));
+});
+
+test("a Mastodon retry deadline survives later failures that happen before sending", async () => {
+  const { cfg, p } = mastodonSetup();
+  const env = { MASTODON_ACCESS_TOKEN: "m" };
+  const ledger = new Ledger(cfg.stateDir);
+  const unclear = fakeFetch(() => new Response("bad gateway", { status: 502 }));
+  await publishDue(cfg, [p], ledger, { ...opts(unclear.f, "2026-10-27T13:05:00Z"), deps: { env, fetch: unclear.f, root: "/" } });
+  const deadline = ledger.get("p1", "mastodon")?.retryBefore;
+  assert.ok(deadline);
+  // A later attempt fails before the status request (the instance is down for uploads).
+  const card = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [mastodon]\ncard:\n  headline: [Hi]", "Hello fediverse.");
+  const broken = { render: async () => Promise.reject(new Error("render failed")) } as unknown as Renderer;
+  await publishDue(cfg, [card], ledger, { ...opts(unclear.f, "2026-10-27T13:20:00Z", { renderer: () => broken }), deps: { env, fetch: unclear.f, root: "/" } });
+  assert.equal(ledger.get("p1", "mastodon")?.retryBefore, deadline);
+  // Past the deadline, nothing is sent.
+  const sent = unclear.calls.length;
+  const late = await publishDue(cfg, [p], ledger, { ...opts(unclear.f, "2026-10-27T14:10:00Z"), catchUp: true, deps: { env, fetch: unclear.f, root: "/" } });
+  assert.deepEqual(late.map((o) => o.result), ["blocked"]);
+  assert.equal(unclear.calls.length, sent);
+});
+
+test("the Mastodon deadline is checked again just before sending", async () => {
+  const { cfg, p } = mastodonSetup();
+  const env = { MASTODON_ACCESS_TOKEN: "m" };
+  const ledger = new Ledger(cfg.stateDir);
+  ledger.set("p1", "mastodon", { status: "failed", error: "HTTP 502", retryBefore: "2026-10-27T13:30:00.000Z" }, new Date("2026-10-27T12:40:00Z"));
+  // The run starts before the deadline, so the early guard lets it through...
+  const { f, calls } = fakeFetch(() => Response.json({ id: "9" }));
+  const realNow = Date.now;
+  let shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const run = publishDue(cfg, [p], ledger, { ...opts(f, "2026-10-27T13:29:59Z"), deps: { env, fetch: f, root: "/" } });
+    // ...but by the time it would send, the run's clock has passed the deadline.
+    shift = 5_000;
+    const out = await run;
+    assert.deepEqual(out.map((o) => o.result), ["uncertain"]);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.ok(calls.every((url) => !url.endsWith("/statuses")));
+});
+
+test("a webhook JSON content type is matched case-insensitively", async () => {
+  const cfg = config({ channels: { hook: { type: "webhook", url: "https://hooks.example/x" } } });
+  const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [hook]");
+  const { f } = fakeFetch(() => new Response("{oops", { status: 200, headers: { "content-type": "Application/JSON" } }));
+  const lines: string[] = [];
+  await publishDue(cfg, [p], new Ledger(cfg.stateDir), opts(f, "2026-10-27T13:05:00Z", { log: (l) => lines.push(l) }));
   assert.ok(lines.some((l) => /not valid JSON/.test(l)));
 });

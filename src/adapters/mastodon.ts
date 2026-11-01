@@ -17,7 +17,7 @@ export function mastodon(name: string, cfg: MastodonChannelConfig, deps: Adapter
   const pollMs = cfg.pollMs;
 
   return {
-    async publish({ post, channel, text, image, firstAttemptAt }: PublishInput): Promise<PublishResult> {
+    async publish({ post, channel, text, image, attemptStartedAt, retryBefore, now = () => new Date() }: PublishInput): Promise<PublishResult> {
       const auth = { Authorization: `Bearer ${requireEnv(deps.env, tokenEnv, name)}` };
       const mediaIds: string[] = [];
 
@@ -41,6 +41,11 @@ export function mastodon(name: string, cfg: MastodonChannelConfig, deps: Adapter
         mediaIds.push(media.id);
       }
 
+      // Media uploads can take a while; check an earlier deadline just before sending.
+      if (retryBefore && now().getTime() >= retryBefore.getTime()) {
+        throw new DeliveryUncertainError(`${name}: an earlier attempt had no clear result and Mastodon no longer remembers its idempotency key`);
+      }
+      const sentAt = now();
       try {
         return await deliver(`${name}: create status`, async () => {
           const res = await expectOk(
@@ -61,10 +66,11 @@ export function mastodon(name: string, cfg: MastodonChannelConfig, deps: Adapter
         });
       } catch (error) {
         // An unclear result is safe to retry while Mastodon still remembers the
-        // key. publishDue compares the deadline with its own clock.
+        // key, which it stores when it handles this request. publishDue compares
+        // the deadline with its own clock.
         if (!(error instanceof DeliveryUncertainError)) throw error;
-        const retryBefore = new Date((firstAttemptAt ?? new Date()).getTime() + MASTODON_RETRY_WINDOW_MS);
-        throw new PublishError(error.message.replace(/ \(it may have gone out\)$/, ""), error.status, error.body, retryBefore);
+        const deadline = new Date((attemptStartedAt ?? sentAt).getTime() + MASTODON_RETRY_WINDOW_MS);
+        throw new PublishError(error.message.replace(/ \(it may have gone out\)$/, ""), error.status, error.body, deadline);
       }
     },
   };
