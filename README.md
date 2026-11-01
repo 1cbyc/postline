@@ -211,6 +211,9 @@ node dist/src/cli.js render --cwd examples/nsisonglabs
 
 Set `POSTLINE_CHROMIUM` to use a Chromium you already have.
 
+The website and hosted docs at [postline.nsisong.com](https://postline.nsisong.com)
+live in [`web/`](web); see [web/README.md](web/README.md).
+
 ## License
 
 Source-available; see [LICENSE](LICENSE). Earlier license terms are preserved in
