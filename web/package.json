@@ -4,10 +4,10 @@
   "description": "postline.nsisong.com: the postline website and documentation, served by Cloudflare Workers.",
   "type": "module",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.6"
   },
   "scripts": {
-    "build": "node scripts/build.ts",
+    "build": "node --experimental-strip-types scripts/build.ts",
     "check": "tsc -p tsconfig.json",
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy"
