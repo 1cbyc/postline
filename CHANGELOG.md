@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+See it before it ships, and hear about problems before a post fails.
+
+- `postline preview`: a local page per post with the card, lint results and each channel's text the way that network will show it: length against the limit, highlighted links and hashtags, where LinkedIn folds behind "see more", the webhook payload and the files channel's Markdown. Reloads on save
+- Pull request previews: a GitHub Action (`uses: 1cbyc/postline@v0.3.0`) that comments the changed posts' rendered cards, per-channel lengths and lint results on pull requests that change posts, kept up to date on every push. Lint errors in other posts still fail the check. `postline init` workflows use it. `postline pr-report` produces the same report locally
+- `postline doctor`: checks the config, lint, drafts due soon, Chromium, each channel's secrets and login, LinkedIn API version age and token expiry, stuck ledger entries, stale locks and the workflow's postline version
+- Alerts: `notify:` sends failed, uncertain and blocked sends and doctor errors and warnings to Slack, Discord, ntfy or a signed JSON endpoint, at most once a day per problem, even when it repeats every run
+- The daemon runs doctor once a day, even when publishing fails, and sends its errors and warnings, including the 14-day token-expiry warning
+- LinkedIn channels accept `tokenExpires:` so doctor can warn 14 days before the token stops working
+
 ## 0.2.2
 
 A website, and a clearer license.

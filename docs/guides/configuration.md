@@ -63,6 +63,11 @@ library:                     # see graphics-library.md
 
 channels: {}                 # see channels.md
 
+notify:                      # optional; see health-and-alerts.md
+  format: slack              # slack, discord, ntfy or json
+  urlEnv: POSTLINE_NOTIFY_URL  # env var holding the webhook or topic URL (or set url:)
+  on: [failed, uncertain, blocked, doctor]
+
 rules:
   maxHashtags: 3
   allowEmoji: true
@@ -90,7 +95,10 @@ font and use `font.file`; it is embedded into the card HTML.
 
 Secrets never go in the config file. Each channel reads its token from an
 environment variable (see [channels.md](channels.md)). `POSTLINE_CHROMIUM` points
-rendering at a specific Chromium binary. `NO_COLOR` turns off coloured output.
+rendering at a specific Chromium binary. `POSTLINE_NOTIFY_URL` holds the alert
+destination and `POSTLINE_NOTIFY_SECRET` signs `json` alerts (both renamable with
+`notify.urlEnv` and `notify.secretEnv`; see [health checks and alerts](health-and-alerts.md)). `NO_COLOR`
+turns off coloured output.
 
 Configuration is validated before any command runs. Invalid dates, unknown status
 values, unsafe post IDs, malformed URLs and out-of-range numeric settings fail

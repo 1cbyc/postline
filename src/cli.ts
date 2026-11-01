@@ -15,6 +15,10 @@ import { localDate } from "./time.js";
 import { runDaemon } from "./daemon.js";
 import { Library } from "./library.js";
 import { LockedError, withStateLock } from "./lock.js";
+import { doctorAlerts, runDoctor, type Check } from "./doctor.js";
+import { sendAlerts, type Alert } from "./notify.js";
+import { startPreview } from "./preview.js";
+import { buildReport, gitChanges, keepImage, RESTYLE_LIMIT, selectChanges, type ChangeSet, type RenderedImage } from "./pr-report.js";
 import { BUILT_IN_LAYOUTS } from "./design.js";
 import type { CardSize } from "./config.js";
 
@@ -46,10 +50,21 @@ Commands
                            save one card at any resolution, e.g. --scale 4 for print
   library [--open]         show where saved graphics live; --open opens the gallery
   layouts                  list built-in and custom card layouts
+  pr-report --base REF [--all] [--images DIR] [--image-url URL] [--no-render]
+            [--out FILE] [--json FILE] [--sha SHA] [--fail-on-error]
+                           Markdown report of the posts a pull request changes:
+                           rendered cards, lengths per channel and lint results
+  preview [--port N] [--open]
+                           local page per post: the card, lint results and each
+                           channel's text as that network will show it
   publish [--dry-run]      send posts whose time has come
           [--now ISO] [--catch-up] [--only ID]
           [--prepare-only | --resume-prepared]
-  daemon [--every MINUTES] keep publishing on a persistent machine (default: 15)
+  daemon [--every MINUTES] keep publishing on a persistent machine (default: 15);
+                           also runs doctor once a day and sends alerts
+  doctor [--offline] [--notify]
+                           check config, tokens, Chromium, the ledger and alerts;
+                           --notify sends errors to your notify: destination
   retry <id> <channel>     clear a stuck, uncertain or failed entry so it sends again
   mark <id> <channel> <published|skipped> [--url URL]
                            record the outcome yourself (e.g. an uncertain post that did go out)
@@ -84,7 +99,10 @@ export function parseArgs(argv: string[]): Args {
   return out;
 }
 
-const BOOL_FLAGS = new Set(["force", "dry-run", "catch-up", "prepare-only", "resume-prepared", "html", "help", "version", "no-library", "open"]);
+const BOOL_FLAGS = new Set([
+  "force", "dry-run", "catch-up", "prepare-only", "resume-prepared", "html", "help", "version", "no-library", "open",
+  "offline", "notify", "no-render", "fail-on-error", "all",
+]);
 
 function libraryFor(cfg: Config, args: Args): Library | undefined {
   return cfg.library.enabled && !args.flags["no-library"] ? new Library(cfg) : undefined;
@@ -158,10 +176,80 @@ async function publishLocked(cfg: Config, posts: Post[], args: Args, now: Date):
       log: (line) => console.log(line),
     });
     if (outcomes.length === 0) console.log(`nothing due at ${now.toISOString()} (${localDate(now, cfg.timezone)} ${cfg.timezone})`);
+    if (!args.flags["dry-run"] && !prepareOnly) {
+      const alerts: Alert[] = [];
+      for (const o of outcomes) {
+        if (o.result !== "failed" && o.result !== "uncertain" && o.result !== "blocked") continue;
+        // Keyed on the problem, not the attempt, so a failure that repeats every
+        // run (a card that won't render) is reported once a day.
+        alerts.push({ event: o.result, message: `${o.post} -> ${o.channel}: ${o.detail ?? o.result}`, key: `${o.result}:${o.post}:${o.channel}:${o.detail ?? ""}` });
+      }
+      await sendAlerts(cfg, alerts, notifyDeps(cfg, now));
+    }
     return outcomes.some((outcome) => outcome.result === "failed" || outcome.result === "uncertain" || outcome.result === "blocked") ? 1 : 0;
   } finally {
     await renderer?.close();
   }
+}
+
+function notifyDeps(cfg: Config, now: Date) {
+  return {
+    env: process.env,
+    fetch: globalThis.fetch,
+    root: cfg.root,
+    requestTimeoutMs: cfg.publish.requestTimeoutMs,
+    now,
+    log: (line: string) => console.error(yellow(line)),
+  };
+}
+
+async function launchChromium(): Promise<string | undefined> {
+  try {
+    const { chromium } = await import("playwright-core");
+    const executablePath = process.env.POSTLINE_CHROMIUM;
+    const browser = await chromium.launch(executablePath ? { executablePath } : {});
+    await browser.close();
+    return undefined;
+  } catch (error) {
+    const first = (error as Error).message.split("\n")[0] ?? "unknown error";
+    return `could not start Chromium (${first}). Run "npx playwright-core install chromium" or set POSTLINE_CHROMIUM`;
+  }
+}
+
+const MARKS: Record<Check["level"], string> = { ok: "✓", info: "·", warn: "!", error: "✗" };
+
+async function doctorCommand(cwd: string, configFile: string | undefined, args: Args, quiet = false): Promise<number> {
+  let cfg: Config;
+  try {
+    cfg = loadConfig(cwd, configFile);
+  } catch (error) {
+    console.log(`${red(MARKS.error)} ${"config".padEnd(12)} ${(error as Error).message}`);
+    return 1;
+  }
+  const now = new Date();
+  const checks = await runDoctor({
+    cfg,
+    posts: loadPosts(cfg),
+    now,
+    env: process.env,
+    version: packageVersion(),
+    ...(args.flags.offline ? {} : { fetch: globalThis.fetch }),
+    requestTimeoutMs: Math.min(cfg.publish.requestTimeoutMs, 15_000),
+    launchChromium,
+  });
+  if (!quiet) {
+    const paint = { ok: green, info: dim, warn: yellow, error: red };
+    console.log(`postline ${packageVersion()} doctor: ${displayPath(cfg, cfg.file)}\n`);
+    for (const c of checks) console.log(`${paint[c.level](MARKS[c.level])} ${c.area.padEnd(12)} ${c.level === "info" ? dim(c.message) : c.message}`);
+  }
+  const errors = checks.filter((c) => c.level === "error").length;
+  const warns = checks.filter((c) => c.level === "warn").length;
+  if (!quiet) console.log(`\n${errors} problem${errors === 1 ? "" : "s"}, ${warns} warning${warns === 1 ? "" : "s"}`);
+  if (args.flags.notify) {
+    const sent = await sendAlerts(cfg, doctorAlerts(checks), notifyDeps(cfg, now));
+    if (sent && !quiet) console.log(`sent ${sent} alert${sent === 1 ? "" : "s"}`);
+  }
+  return errors > 0 ? 1 : 0;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -225,11 +313,26 @@ async function main(argv: string[]): Promise<number> {
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
     console.log(`postline daemon started; checking every ${everyMinutes} minute${everyMinutes === 1 ? "" : "s"}`);
+    // Once a day the daemon also runs doctor, so an expiring token or a stuck
+    // post raises an alert before the next post is due.
+    let lastDoctor = 0;
+    const task = async (): Promise<number> => {
+      try {
+        return await publishCommand(cwd, str(args, "config"), args);
+      } finally {
+        // Also when publishing throws: that's exactly when doctor's checks matter.
+        if (Date.now() - lastDoctor >= 24 * 60 * 60 * 1000) {
+          lastDoctor = Date.now();
+          const health = await doctorCommand(cwd, str(args, "config"), { ...args, flags: { ...args.flags, notify: true } }, true);
+          if (health !== 0) console.error(yellow("doctor found problems; run postline doctor for details"));
+        }
+      }
+    };
     try {
       await runDaemon({
         intervalMs: Math.round(everyMinutes * 60_000),
         signal: controller.signal,
-        task: () => publishCommand(cwd, str(args, "config"), args),
+        task,
         log: (line) => console.log(line),
         error: (line) => console.error(red(line)),
       });
@@ -242,6 +345,72 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (cmd === "publish") return publishCommand(cwd, str(args, "config"), args);
+  if (cmd === "doctor") return doctorCommand(cwd, str(args, "config"), args);
+
+  if (cmd === "pr-report") {
+    const cfg = loadConfig(cwd, str(args, "config"));
+    const posts = loadPosts(cfg);
+    const base = str(args, "base") ?? (process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : undefined);
+    let changes: ChangeSet;
+    if (args.flags.all) changes = { posts };
+    else if (base) changes = selectChanges(cfg, posts, gitChanges(cfg.root, base));
+    else throw new ConfigError("pr-report needs --base REF (the branch the pull request targets) or --all");
+
+    const images = new Map<string, RenderedImage>();
+    const renderErrors = new Map<string, string>();
+    const imagesDir = str(args, "images");
+    if (imagesDir && !args.flags["no-render"]) {
+      const urlTemplate = str(args, "image-url");
+      const renderer = new Renderer(cfg);
+      try {
+        for (const post of changes.posts.slice(0, changes.restyled ? RESTYLE_LIMIT : undefined)) {
+          if (!post.card) continue;
+          try {
+            const card = await renderer.render(post);
+            images.set(post.id, keepImage(post, card.file, card.hash, resolve(cwd, imagesDir), urlTemplate));
+          } catch (error) {
+            renderErrors.set(post.id, (error as Error).message);
+          }
+        }
+      } finally {
+        await renderer.close();
+      }
+    }
+    const sha = str(args, "sha") ?? process.env.GITHUB_SHA;
+    const report = buildReport({ cfg, posts, changes, images, renderErrors, ...(sha ? { sha } : {}) });
+    const out = str(args, "out");
+    if (out) writeFileSync(resolve(cwd, out), report.markdown);
+    else process.stdout.write(report.markdown);
+    const json = str(args, "json");
+    if (json) {
+      const summary = {
+        changed: report.changed,
+        errors: report.errors,
+        warnings: report.warnings,
+        otherErrors: report.otherErrors,
+        images: [...images.values()].map((i) => i.name),
+      };
+      writeFileSync(resolve(cwd, json), JSON.stringify(summary) + "\n");
+    }
+    return args.flags["fail-on-error"] && report.errors + report.otherErrors > 0 ? 1 : 0;
+  }
+
+  if (cmd === "preview") {
+    const portFlag = str(args, "port") ?? "4400";
+    const port = Number(portFlag);
+    if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new ConfigError(`--port "${portFlag}" is not a port number`);
+    loadConfig(cwd, str(args, "config"));
+    const configFile = str(args, "config");
+    const server = await startPreview({ cwd, ...(configFile ? { configFile } : {}), port, log: (line) => console.error(yellow(line)) });
+    console.log(`postline preview at ${server.url} (Ctrl+C to stop)`);
+    if (args.flags.open) openPath(server.url);
+    await new Promise<void>((done) => {
+      process.once("SIGINT", done);
+      process.once("SIGTERM", done);
+    });
+    await server.close();
+    return 0;
+  }
 
   const cfg = loadConfig(cwd, str(args, "config"));
   const posts = loadPosts(cfg);

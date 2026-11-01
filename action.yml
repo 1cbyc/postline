@@ -1,0 +1,161 @@
+name: postline preview
+description: Comment rendered cards, per-channel lengths and lint results on pull requests that change postline posts.
+author: Isaac Emmanuel
+branding:
+  icon: image
+  color: blue
+
+inputs:
+  working-directory:
+    description: Folder that holds postline.config.yaml.
+    default: "."
+  github-token:
+    description: Token used to push card images and comment. Needs contents and pull-requests write.
+    default: ${{ github.token }}
+  images-branch:
+    description: Branch the card images are pushed to, so the comment can show them.
+    default: postline-previews
+  fail-on-error:
+    description: Fail the job when a changed post has lint errors.
+    default: "false"
+
+outputs:
+  errors:
+    description: Lint errors in the changed posts plus any in posts the pull request didn't change.
+    value: ${{ steps.report.outputs.errors }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 22
+
+    - name: Build postline
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --no-audit --no-fund && npm run build
+
+    - name: Install Chromium
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npx playwright-core install --with-deps chromium
+
+    - name: Render and lint the changed posts
+      id: report
+      shell: bash
+      env:
+        WORKDIR: ${{ inputs.working-directory }}
+        BASE_REF: ${{ github.base_ref }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        BRANCH: ${{ inputs.images-branch }}
+        SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        POSTLINE: ${{ github.action_path }}/dist/src/cli.js
+      run: |
+        set -euo pipefail
+        if [ -z "${PR:-}" ] || [ -z "${BASE_REF:-}" ]; then
+          echo "::error::the postline preview action runs on pull_request events"
+          exit 1
+        fi
+        git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+        slug=$(printf '%s' "$WORKDIR" | tr -c 'A-Za-z0-9._-' '-' | sed -e 's/^[-.]*//' -e 's/-*$//')
+        [ -n "$slug" ] || slug=root
+        dir="$RUNNER_TEMP/postline-preview/$slug"
+        rm -rf "$dir" && mkdir -p "$dir/images"
+
+        image_url=()
+        if [ "$SAME_REPO" = "true" ]; then
+          image_url=(--image-url "https://github.com/${REPO}/blob/${BRANCH}/pr-${PR}/${slug}/{file}?raw=true")
+        fi
+        node "$POSTLINE" pr-report --cwd "$WORKDIR" --base "origin/${BASE_REF}" \
+          --images "$dir/images" "${image_url[@]}" --out "$dir/report.md" --json "$dir/summary.json"
+
+        # Errors in changed posts, plus errors in posts the PR didn't touch (they still block publishing).
+        errors=$(node -e 'const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(s.errors + s.otherErrors)' "$dir/summary.json")
+        {
+          echo "slug=$slug"
+          echo "dir=$dir"
+          echo "errors=$errors"
+        } >> "$GITHUB_OUTPUT"
+        cat "$dir/report.md" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$SAME_REPO" != "true" ]; then
+          echo "::notice::pull request from a fork: the report is in the job summary, because the token can't comment"
+        fi
+
+    - name: Publish the card images
+      id: images
+      if: github.event.pull_request.head.repo.full_name == github.repository
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        BRANCH: ${{ inputs.images-branch }}
+        PR: ${{ github.event.pull_request.number }}
+        SLUG: ${{ steps.report.outputs.slug }}
+        DIR: ${{ steps.report.outputs.dir }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        files=("$DIR"/images/*)
+        if [ ${#files[@]} -eq 0 ]; then echo "pushed=none" >> "$GITHUB_OUTPUT"; exit 0; fi
+        remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+        tree="$RUNNER_TEMP/postline-previews-tree"
+        # Other jobs may push at the same time; start again from the remote on a conflict.
+        for attempt in 1 2 3; do
+          rm -rf "$tree"
+          if git ls-remote --exit-code "$remote" "refs/heads/${BRANCH}" > /dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch "$BRANCH" "$remote" "$tree"
+          else
+            git init --quiet "$tree"
+            git -C "$tree" checkout --quiet --orphan "$BRANCH"
+            printf '# postline previews\n\nCard images for pull request comments, pushed by the postline preview action. Safe to delete.\n' > "$tree/README.md"
+          fi
+          rm -rf "$tree/pr-${PR}/${SLUG}"
+          mkdir -p "$tree/pr-${PR}/${SLUG}"
+          cp "${files[@]}" "$tree/pr-${PR}/${SLUG}/"
+          git -C "$tree" add -A
+          if git -C "$tree" diff --cached --quiet; then echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git -C "$tree" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "previews for #${PR} (${SLUG})"
+          if git -C "$tree" push --quiet "$remote" "HEAD:refs/heads/${BRANCH}"; then echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          sleep $((attempt * 3))
+        done
+        echo "pushed=false" >> "$GITHUB_OUTPUT"
+        echo "::warning::could not push the card images to ${BRANCH}; the comment will show lint results without images"
+
+    - name: Comment on the pull request
+      if: github.event.pull_request.head.repo.full_name == github.repository
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        SLUG: ${{ steps.report.outputs.slug }}
+        DIR: ${{ steps.report.outputs.dir }}
+        PUSHED: ${{ steps.images.outputs.pushed }}
+      run: |
+        set -euo pipefail
+        marker="<!-- postline-preview:${SLUG} -->"
+        { echo "$marker"; cat "$DIR/report.md"; } > "$DIR/comment.md"
+        if [ "$PUSHED" = "false" ]; then
+          # The images never reached the branch; don't leave broken links in the comment.
+          sed -i -E 's#^<img src="https://github\.com/[^"]*" width="360" alt="[^"]*">$#_The card image could not be published._#' "$DIR/comment.md"
+        fi
+        id=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+          --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"${marker}\"))) | .id" | head -n 1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -F body=@"$DIR/comment.md" > /dev/null
+        elif ! grep -q '<!-- postline-no-changes -->' "$DIR/report.md"; then
+          gh api "repos/${REPO}/issues/${PR}/comments" -F body=@"$DIR/comment.md" > /dev/null
+        fi
+
+    - name: Fail on lint errors
+      if: inputs.fail-on-error == 'true' && steps.report.outputs.errors != '0'
+      shell: bash
+      env:
+        ERRORS: ${{ steps.report.outputs.errors }}
+      run: |
+        echo "::error::${ERRORS} lint error(s); see the postline preview comment, or run postline lint"
+        exit 1
