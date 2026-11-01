@@ -88,12 +88,12 @@ test("failures are retried up to maxAttempts", async () => {
   const cfg = config({ channels: { linkedin: { type: "linkedin", organization: "42" } }, publish: { maxAttempts: 2 } });
   const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [linkedin]");
   const ledger = new Ledger(cfg.stateDir);
-  const failing = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  const failing = (async () => new Response("nope", { status: 429 })) as unknown as typeof fetch;
   const r1 = await publishDue(cfg, [p], ledger, opts(failing, "2026-10-27T13:05:00Z"));
   const r2 = await publishDue(cfg, [p], ledger, opts(failing, "2026-10-27T13:20:00Z"));
   const r3 = await publishDue(cfg, [p], ledger, opts(failing, "2026-10-27T13:35:00Z"));
   assert.deepEqual([r1[0]!.result, r2[0]!.result, r3[0]!.result], ["failed", "failed", "blocked"]);
-  assert.match(ledger.get("p1", "linkedin")!.error!, /HTTP 500 nope/);
+  assert.match(ledger.get("p1", "linkedin")!.error!, /HTTP 429 nope/);
 });
 
 test("late posts are skipped unless catching up", async () => {

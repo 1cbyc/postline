@@ -68,8 +68,9 @@ three days of posts in a row. Use `postline publish --catch-up` to send them any
 
 ## When something fails
 
-- **failed**: the network said no. postline retries on the next run, up to `publish.maxAttempts`. The error is in the ledger and the job log.
-- **attempting**: a run started sending and died before recording the result. The post may or may not be live. Check the network. If it went out, run `postline mark <id> <channel> published --url <link>`. If it didn't, run `postline retry <id> <channel>`.
+- **failed**: the post certainly did not go out. Either the network turned it down (a 4xx), or something failed before the request that publishes it (login, image upload, rendering the card). postline retries on the next run, up to `publish.maxAttempts`. The error is in the ledger and the job log.
+- **uncertain**: the request that publishes the post timed out, lost its connection or got a 5xx, so it may be live. postline does not retry it. Check the network. If it went out, run `postline mark <id> <channel> published --url <link>`. If it didn't, run `postline retry <id> <channel>`.
+- **attempting**: a run started sending and died before recording the result. Resolve it the same way as **uncertain**.
 - **skipped**: too late. `postline retry` and `--catch-up` if you still want it.
 
 ## Pull requests

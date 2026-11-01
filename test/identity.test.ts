@@ -31,3 +31,16 @@ test("tracked files and commit identities do not expose the personal email", () 
     .filter(Boolean);
   assert.ok(!identities.includes(forbiddenEmail));
 });
+
+test("init templates carry no maintainer identity into users' repos", () => {
+  const paths = execFileSync("git", ["ls-files", "-z", "--", "templates"], { cwd: root })
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean);
+  const emailPattern = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+  const offending = paths.filter((path) => {
+    const text = readFileSync(resolve(root, path), "utf8");
+    return /co-authored-by:/i.test(text) || emailPattern.test(text);
+  });
+  assert.deepEqual(offending, []);
+});

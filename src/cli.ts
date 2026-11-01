@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync, mkdirSync, cpSync, renameSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, renameSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, ConfigError, type Config } from "./config.js";
-import { loadPosts, displayPath } from "./content.js";
+import { loadPosts, displayPath, type Post } from "./content.js";
 import { lint } from "./lint.js";
 import { planWeek, slotsForWeek, weekStart, nextWeekStart } from "./calendar.js";
 import { Ledger } from "./ledger.js";
@@ -14,11 +14,21 @@ import { brief } from "./brief.js";
 import { localDate } from "./time.js";
 import { runDaemon } from "./daemon.js";
 import { Library } from "./library.js";
+import { LockedError, withStateLock } from "./lock.js";
 import { BUILT_IN_LAYOUTS } from "./design.js";
 import type { CardSize } from "./config.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..", "..");
+
+const VERSION_PLACEHOLDER = "__POSTLINE_VERSION__";
+
+function packageVersion(): string {
+  const pkg: unknown = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+  const version = typeof pkg === "object" && pkg !== null ? (pkg as Record<string, unknown>).version : undefined;
+  if (typeof version !== "string") throw new Error("postline's package.json has no version");
+  return version;
+}
 
 const HELP = `postline: plan, render and publish branded social posts from a git repo
 
@@ -40,9 +50,9 @@ Commands
           [--now ISO] [--catch-up] [--only ID]
           [--prepare-only | --resume-prepared]
   daemon [--every MINUTES] keep publishing on a persistent machine (default: 15)
-  retry <id> <channel>     clear a stuck or failed entry so it sends again
+  retry <id> <channel>     clear a stuck, uncertain or failed entry so it sends again
   mark <id> <channel> <published|skipped> [--url URL]
-                           record the outcome yourself (e.g. a stuck post that did go out)
+                           record the outcome yourself (e.g. an uncertain post that did go out)
 
 Global options
   --cwd DIR                project directory (default: current)
@@ -118,9 +128,18 @@ async function publishCommand(cwd: string, configFile: string | undefined, args:
   const prepareOnly = Boolean(args.flags["prepare-only"]);
   const resumePrepared = Boolean(args.flags["resume-prepared"]);
   if (prepareOnly && resumePrepared) throw new ConfigError("--prepare-only and --resume-prepared cannot be used together");
-  if (Boolean(args.flags["dry-run"]) && (prepareOnly || resumePrepared)) {
+  const dryRun = Boolean(args.flags["dry-run"]);
+  if (dryRun && (prepareOnly || resumePrepared)) {
     throw new ConfigError("--dry-run cannot be combined with --prepare-only or --resume-prepared");
   }
+  // A dry run only reads the ledger, so it may run beside a daemon.
+  return dryRun ? publishLocked(cfg, posts, args, now) : withStateLock(cfg.stateDir, () => publishLocked(cfg, posts, args, now));
+}
+
+async function publishLocked(cfg: Config, posts: Post[], args: Args, now: Date): Promise<number> {
+  const prepareOnly = Boolean(args.flags["prepare-only"]);
+  const resumePrepared = Boolean(args.flags["resume-prepared"]);
+  // Read the ledger only once we hold the lock, so it reflects the last run.
   const ledger = new Ledger(cfg.stateDir);
   let renderer: Renderer | undefined;
   const only = str(args, "only");
@@ -139,7 +158,7 @@ async function publishCommand(cwd: string, configFile: string | undefined, args:
       log: (line) => console.log(line),
     });
     if (outcomes.length === 0) console.log(`nothing due at ${now.toISOString()} (${localDate(now, cfg.timezone)} ${cfg.timezone})`);
-    return outcomes.some((outcome) => outcome.result === "failed" || outcome.result === "blocked") ? 1 : 0;
+    return outcomes.some((outcome) => outcome.result === "failed" || outcome.result === "uncertain" || outcome.result === "blocked") ? 1 : 0;
   } finally {
     await renderer?.close();
   }
@@ -156,7 +175,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const [cmd, ...rest] = args._;
   if (args.flags.version) {
-    console.log(JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version);
+    console.log(packageVersion());
     return 0;
   }
   if (!cmd || args.flags.help || cmd === "help") {
@@ -179,6 +198,12 @@ async function main(argv: string[]): Promise<number> {
     if (existsSync(gi)) {
       if (existsSync(join(target, ".gitignore"))) rmSync(gi);
       else renameSync(gi, join(target, ".gitignore"));
+    }
+    // Pin the workflow to the postline that scaffolded it.
+    const workflow = join(target, ".github", "workflows", "postline.yml");
+    if (existsSync(workflow)) {
+      const source = readFileSync(workflow, "utf8");
+      if (source.includes(VERSION_PLACEHOLDER)) writeFileSync(workflow, source.replaceAll(VERSION_PLACEHOLDER, packageVersion()));
     }
     console.log(`created a postline project in ${target}`);
     console.log("next: edit postline.config.yaml, then run `postline plan` and `postline render`");
@@ -244,7 +269,7 @@ async function main(argv: string[]): Promise<number> {
             .map((ch) => {
               const e = ledger.get(p.id, ch);
               const s = e?.status ?? (p.status === "draft" ? "draft" : "queued");
-              const paintIt = s === "published" ? green : s === "failed" || s === "attempting" ? red : s === "draft" ? dim : (x: string) => x;
+              const paintIt = s === "published" ? green : s === "failed" || s === "attempting" || s === "uncertain" ? red : s === "draft" ? dim : (x: string) => x;
               return `${ch}:${paintIt(s)}`;
             })
             .join(" ");
@@ -361,14 +386,16 @@ async function main(argv: string[]): Promise<number> {
         console.error("usage: postline retry <id> <channel>");
         return 1;
       }
-      const ledger = new Ledger(cfg.stateDir);
-      if (!ledger.reset(id, channel)) {
-        console.error(`no ledger entry for ${id} on ${channel}`);
-        return 1;
-      }
-      ledger.save();
-      console.log(`cleared ${id} on ${channel}; it will go out on the next publish run`);
-      return 0;
+      return withStateLock(cfg.stateDir, async () => {
+        const ledger = new Ledger(cfg.stateDir);
+        if (!ledger.reset(id, channel)) {
+          console.error(`no ledger entry for ${id} on ${channel}`);
+          return 1;
+        }
+        ledger.save();
+        console.log(`cleared ${id} on ${channel}; it will go out on the next publish run`);
+        return 0;
+      });
     }
 
     case "mark": {
@@ -377,16 +404,18 @@ async function main(argv: string[]): Promise<number> {
         console.error("usage: postline mark <id> <channel> <published|skipped> [--url URL]");
         return 1;
       }
-      const ledger = new Ledger(cfg.stateDir);
       const url = str(args, "url");
-      ledger.set(id, channel, {
-        status,
-        ...(url === undefined ? {} : { url }),
-        ...(status === "skipped" ? { error: "marked by hand" } : {}),
+      return withStateLock(cfg.stateDir, async () => {
+        const ledger = new Ledger(cfg.stateDir);
+        ledger.set(id, channel, {
+          status,
+          ...(url === undefined ? {} : { url }),
+          ...(status === "skipped" ? { error: "marked by hand" } : {}),
+        });
+        ledger.save();
+        console.log(`marked ${id} on ${channel} as ${status}`);
+        return 0;
       });
-      ledger.save();
-      console.log(`marked ${id} on ${channel} as ${status}`);
-      return 0;
     }
 
     default:
@@ -399,7 +428,8 @@ async function main(argv: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err) => {
-    console.error(red(err instanceof ConfigError ? `config: ${err.message}` : (err as Error).stack ?? String(err)));
+    const message = err instanceof ConfigError ? `config: ${err.message}` : err instanceof LockedError ? err.message : (err as Error).stack ?? String(err);
+    console.error(red(message));
     process.exit(1);
   },
 );

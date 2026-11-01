@@ -1,8 +1,13 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, renameSync, mkdirSync, existsSync, openSync, writeSync, fsyncSync, closeSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { assertSafeFileStem } from "./path.js";
 
-export type EntryStatus = "attempting" | "published" | "failed" | "skipped";
+/**
+ * attempting: a send started and its result was never recorded.
+ * uncertain: the send ended without a clear answer from the network.
+ * Both block publishing until someone checks the channel.
+ */
+export type EntryStatus = "attempting" | "uncertain" | "published" | "failed" | "skipped";
 
 export interface Entry {
   status: EntryStatus;
@@ -18,7 +23,7 @@ interface LedgerFile {
   entries: Record<string, Entry>;
 }
 
-const ENTRY_STATUSES = new Set<EntryStatus>(["attempting", "published", "failed", "skipped"]);
+const ENTRY_STATUSES = new Set<EntryStatus>(["attempting", "uncertain", "published", "failed", "skipped"]);
 
 function readLedger(file: string): LedgerFile {
   let parsed: unknown;
@@ -57,6 +62,18 @@ function readLedger(file: string): LedgerFile {
     };
   }
   return { version: 1, entries };
+}
+
+function syncDir(dir: string): void {
+  let fd: number | undefined;
+  try {
+    fd = openSync(dir, "r");
+    fsyncSync(fd);
+  } catch {
+    // Windows can't open directories; the file itself is already flushed.
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 /**
@@ -113,7 +130,16 @@ export class Ledger {
       version: 1,
       entries: Object.fromEntries(Object.entries(this.data.entries).sort(([a], [b]) => a.localeCompare(b))),
     };
-    writeFileSync(tmp, JSON.stringify(sorted, null, 2) + "\n");
+    // Flush to disk before the rename so a crash can't leave an empty ledger,
+    // then flush the directory so the rename itself survives.
+    const fd = openSync(tmp, "w");
+    try {
+      writeSync(fd, JSON.stringify(sorted, null, 2) + "\n");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(tmp, this.file);
+    syncDir(dirname(this.file));
   }
 }

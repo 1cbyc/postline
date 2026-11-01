@@ -17,6 +17,7 @@ superseded ones stay, marked as such.
 | [009](adr-009-durable-signed-publish-transitions.md) | Persist signed delivery intent before network calls |
 | [010](adr-010-bring-your-own-design-system.md) | Bring your own design system: tokens, stylesheet, templates |
 | [011](adr-011-local-graphics-library.md) | Keep a local graphics library outside the repo |
+| [012](adr-012-uncertain-deliveries.md) | Unclear send results are never retried automatically |
 
 ## Format
 

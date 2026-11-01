@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import { type Post, textFor } from "./content.js";
 import { Ledger } from "./ledger.js";
 import { lint } from "./lint.js";
-import { createAdapter, type AdapterDeps, type MediaInput } from "./adapters/index.js";
+import { createAdapter, DeliveryUncertainError, type AdapterDeps, type MediaInput } from "./adapters/index.js";
 import type { Renderer } from "./render/png.js";
 import type { Library } from "./library.js";
 import { firstLine } from "./text.js";
@@ -27,7 +27,7 @@ export interface PublishOptions {
 export interface Outcome {
   post: string;
   channel: string;
-  result: "prepared" | "published" | "dry-run" | "failed" | "skipped" | "blocked";
+  result: "prepared" | "published" | "dry-run" | "failed" | "uncertain" | "skipped" | "blocked";
   detail?: string;
 }
 
@@ -87,6 +87,11 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       opts.log(`! ${tag}: previous attempt did not finish; check ${channel} and run "postline retry ${post.id} ${channel}"`);
       continue;
     }
+    if (entry?.status === "uncertain") {
+      outcomes.push({ post: post.id, channel, result: "blocked", detail: `may have gone out: ${entry.error}` });
+      opts.log(`! ${tag}: last attempt may have gone out; check ${channel}, then run "postline mark ${post.id} ${channel} published" or "postline retry ${post.id} ${channel}"`);
+      continue;
+    }
     if (entry?.status === "failed" && entry.attempts >= cfg.publish.maxAttempts) {
       outcomes.push({ post: post.id, channel, result: "blocked", detail: `gave up after ${entry.attempts} attempts: ${entry.error}` });
       continue;
@@ -126,12 +131,25 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       continue;
     }
 
+    // Render before marking the attempt: a card that fails to render was
+    // certainly not sent, so it shouldn't use up an attempt.
+    let image: MediaInput | undefined;
+    try {
+      image = await mediaFor(post, opts, media);
+    } catch (err) {
+      const message = (err as Error).message;
+      ledger.set(post.id, channel, { status: "failed", error: message }, new Date());
+      ledger.save();
+      outcomes.push({ post: post.id, channel, result: "failed", detail: message });
+      opts.log(`x ${tag}: ${message}`);
+      continue;
+    }
+
     if (!opts.resumePrepared) {
       ledger.set(post.id, channel, { status: "attempting" }, opts.now);
       ledger.save();
     }
     try {
-      const image = await mediaFor(post, opts, media);
       const adapter = createAdapter(channel, chCfg, opts.deps);
       const res = await adapter.publish({ post, channel, text, ...(image === undefined ? {} : { image }) });
       ledger.set(post.id, channel, { status: "published", remoteId: res.id, ...(res.url === undefined ? {} : { url: res.url }) }, new Date());
@@ -149,9 +167,15 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       }
     } catch (err) {
       const message = (err as Error).message;
-      ledger.set(post.id, channel, { status: "failed", error: message }, new Date());
-      outcomes.push({ post: post.id, channel, result: "failed", detail: message });
-      opts.log(`x ${tag}: ${message}`);
+      if (err instanceof DeliveryUncertainError) {
+        ledger.set(post.id, channel, { status: "uncertain", error: message }, new Date());
+        outcomes.push({ post: post.id, channel, result: "uncertain", detail: message });
+        opts.log(`? ${tag}: ${message}; check ${channel}, then run "postline mark" or "postline retry"`);
+      } else {
+        ledger.set(post.id, channel, { status: "failed", error: message }, new Date());
+        outcomes.push({ post: post.id, channel, result: "failed", detail: message });
+        opts.log(`x ${tag}: ${message}`);
+      }
     }
     ledger.save();
   }
