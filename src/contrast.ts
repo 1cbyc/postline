@@ -32,9 +32,12 @@ export function luminance({ r, g, b }: Rgb): number {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
 
-/** `top` drawn at `alpha` opacity over `bottom`, as CSS color-mix(top alpha, bottom) does in sRGB. */
+/**
+ * `top` drawn at `alpha` opacity over `bottom`, as CSS color-mix(top alpha, bottom)
+ * does in sRGB. Channels stay fractional so rounding can't nudge a ratio over a limit.
+ */
 export function blend(top: Rgb, bottom: Rgb, alpha: number): Rgb {
-  const mix = (a: number, b: number) => Math.round(a * alpha + b * (1 - alpha));
+  const mix = (a: number, b: number) => a * alpha + b * (1 - alpha);
   return { r: mix(top.r, bottom.r), g: mix(top.g, bottom.g), b: mix(top.b, bottom.b) };
 }
 

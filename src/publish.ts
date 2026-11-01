@@ -167,9 +167,9 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       ledger.set(post.id, channel, { status: "attempting" }, opts.now);
       ledger.save();
     }
+    const pending = ledger.get(post.id, channel)?.retryBefore;
     try {
       const adapter = createAdapter(channel, chCfg, opts.deps);
-      const pending = ledger.get(post.id, channel)?.retryBefore;
       const res = await adapter.publish({
         post,
         channel,
@@ -201,7 +201,9 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
         opts.log(`? ${tag}: ${message}; check ${channel}, then run "postline mark" or "postline retry"`);
       } else {
         const retryBefore = err instanceof PublishError ? err.retryBefore : undefined;
-        if (retryBefore && clock().getTime() >= retryBefore.getTime()) {
+        // An earlier unclear send's deadline still binds if it comes first.
+        const binding = retryBefore && pending ? Math.min(retryBefore.getTime(), Date.parse(pending)) : retryBefore?.getTime();
+        if (binding !== undefined && clock().getTime() >= binding) {
           // Retrying would no longer be safe, so this is as unclear as any other.
           ledger.set(post.id, channel, { status: "uncertain", error: `${message} (it may have gone out)` }, new Date());
           outcomes.push({ post: post.id, channel, result: "uncertain", detail: message });

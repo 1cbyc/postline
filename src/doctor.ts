@@ -164,6 +164,8 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
   const bg = read(colors.background);
   const panel = read(colors.panel);
   const accent = read(colors.accent);
+  // Base colours only: the faint accent glow in one corner of the built-in
+  // layouts sits where no text is drawn, so it isn't included.
   type Pair = { name: string; fg: Rgb | undefined; bg: Rgb | undefined; min: number };
   const pairs: Pair[] = [
     { name: "text on background", fg: read(colors.text), bg, min: 4.5 },
@@ -190,8 +192,11 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
     if (r < pair.min) weak.push(`${pair.name} ${r.toFixed(1)}:1 (needs ${pair.min}:1)`);
   }
   const checked = pairs.length - unverified.length;
-  if (weak.length) checks.push({ level: "warn", area: "brand", message: `colours below WCAG AA contrast: ${weak.join("; ")}` });
-  else if (checked) checks.push({ level: "ok", area: "brand", message: `${checked} colour pairs meet WCAG AA contrast` });
+  if (weak.length) checks.push({ level: "warn", area: "brand", message: `colours below WCAG AA contrast in the built-in layouts: ${weak.join("; ")}` });
+  else if (checked) checks.push({ level: "ok", area: "brand", message: `${checked} colour pairs meet WCAG AA contrast in the built-in layouts` });
+  if (cfg.design.stylesheet || Object.keys(cfg.design.layouts).length) {
+    checks.push({ level: "info", area: "brand", message: "custom layouts and design.stylesheet can change colours; check those cards by eye" });
+  }
   if (unverified.length) {
     checks.push({ level: "info", area: "brand", message: `couldn't check ${unverified.join(", ")}: write those colours as hex or rgb() to have them checked` });
   }

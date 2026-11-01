@@ -293,3 +293,24 @@ test("a webhook JSON content type is matched case-insensitively", async () => {
   await publishDue(cfg, [p], new Ledger(cfg.stateDir), opts(f, "2026-10-27T13:05:00Z", { log: (l) => lines.push(l) }));
   assert.ok(lines.some((l) => /not valid JSON/.test(l)));
 });
+
+test("an earlier Mastodon deadline that passes mid-request makes the result uncertain in the same run", async () => {
+  const { cfg, p } = mastodonSetup();
+  const env = { MASTODON_ACCESS_TOKEN: "m" };
+  const ledger = new Ledger(cfg.stateDir);
+  ledger.set("p1", "mastodon", { status: "failed", error: "HTTP 502", retryBefore: "2026-10-27T13:30:02.000Z" }, new Date("2026-10-27T12:40:00Z"));
+  const realNow = Date.now;
+  let shift = 0;
+  const f = (async (url: string) => {
+    if (url.endsWith("/statuses")) shift = 10_000; // the request takes long enough to cross the deadline
+    return new Response("bad gateway", { status: 502 });
+  }) as unknown as typeof fetch;
+  Date.now = () => realNow() + shift;
+  try {
+    const out = await publishDue(cfg, [p], ledger, { ...opts(f, "2026-10-27T13:30:00Z"), deps: { env, fetch: f, root: "/" } });
+    assert.deepEqual(out.map((o) => o.result), ["uncertain"]);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(ledger.get("p1", "mastodon")?.status, "uncertain");
+});

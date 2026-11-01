@@ -17,7 +17,7 @@ postline 0.3.2 doctor: postline.config.yaml
 ✓ config       loaded postline.config.yaml
 ✓ posts        12 posts, no lint errors
 · posts        next post: 2026-11-03-launch at Tue, Nov 3, 8:30 AM
-✓ brand        9 colour pairs meet WCAG AA contrast
+✓ brand        9 colour pairs meet WCAG AA contrast in the built-in layouts
 ✓ chromium     starts and can render cards
 ! linkedin     access token expires in 9 days (2026-11-10). Refresh it before then
 ✓ linkedin     LinkedIn accepted the access token
@@ -33,7 +33,7 @@ It checks:
 | Area | What it checks |
 | --- | --- |
 | config, posts | The config loads; lint errors; drafts due in the next 48 hours; the next post |
-| brand | Card colours meet WCAG AA contrast as the layouts draw them: text and muted text on the background and on panels, and chip text over its chip, at 4.5:1; the accent on the background and in number badges at 3:1. Colours written as hex or `rgb()` are checked; others are listed as unchecked |
+| brand | The base card colours meet WCAG AA contrast as the built-in layouts use them (the faint corner glow isn't included): text and muted text on the background and on panels, and chip text over its chip, at 4.5:1; the accent on the background and in number badges at 3:1. Colours written as hex or `rgb()` are checked; others are listed as unchecked. Custom layouts and stylesheets are not checked |
 | chromium | Chromium starts, when any post has a card |
 | each channel | Its environment variables are set, and one harmless login per network: LinkedIn and Mastodon verify the token, Bluesky signs in. Nothing is posted. Webhooks are not called, because a test request would trigger the receiver |
 | LinkedIn | API version age: a warning at 10 months, an error at 12 (LinkedIn retires versions after about a year). Token expiry from `tokenExpires`: a warning 14 days ahead, an error once it has passed |
