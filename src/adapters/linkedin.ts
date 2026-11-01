@@ -1,5 +1,5 @@
 import type { Adapter, AdapterDeps, PublishInput, PublishResult } from "./types.js";
-import { expectOk, fetchWithTimeout, PublishError, requireEnv } from "./types.js";
+import { deliver, DeliveryUncertainError, expectOk, fetchWithTimeout, PublishError, requireEnv } from "./types.js";
 import type { LinkedInChannelConfig } from "../config.js";
 import { HASHTAG_RE } from "../text.js";
 
@@ -73,13 +73,16 @@ export function linkedin(name: string, cfg: LinkedInChannelConfig, deps: Adapter
         isReshareDisabledByAuthor: false,
         ...(media ? { content: { media } } : {}),
       };
-      const res = await expectOk(
+      // LinkedIn has no idempotency key, so an unclear result must not be retried.
+      return deliver(`${name}: create post`, async () => {
+        const res = await expectOk(
           await fetchWithTimeout(deps, `${API}/posts`, { method: "POST", headers, body: JSON.stringify(body) }, `${name}: create post`),
-        `${name}: create post`,
-      );
-      const id = res.headers.get("x-restli-id") ?? res.headers.get("x-linkedin-id") ?? "";
-      if (!id) throw new PublishError(`${name}: post created but no id returned`);
-      return { id, url: `https://www.linkedin.com/feed/update/${id}/` };
+          `${name}: create post`,
+        );
+        const id = res.headers.get("x-restli-id") ?? res.headers.get("x-linkedin-id") ?? "";
+        if (!id) throw new DeliveryUncertainError(`${name}: LinkedIn accepted the post but returned no id`);
+        return { id, url: `https://www.linkedin.com/feed/update/${id}/` };
+      });
     },
   };
 }

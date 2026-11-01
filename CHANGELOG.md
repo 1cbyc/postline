@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1
+
+Safer delivery.
+
+- A send that ends without a clear answer (timeout, dropped connection, 5xx, or LinkedIn accepting a post without returning its id) is now recorded as `uncertain` and never retried automatically; previously it was `failed` and retried, which could post twice
+- Bluesky posts use a fixed record key per post, and postline looks it up before posting, so retries can't create a duplicate
+- Webhook timeouts and 5xx responses are `uncertain` too; 4xx responses are still retried
+- `publish`, daemon checks, `retry` and `mark` hold `.postline/publish.lock`, so two processes on one project can't send the same post
+- A card that fails to render no longer uses up a publish attempt
+- The ledger is flushed to disk before it replaces the old one
+- `postline init` pins the generated GitHub workflow to its own version and installs it from npm; the workflow no longer adds a maintainer `Co-authored-by` line to your ledger commits
+- Install from npm: `npm install --global postline`
+
 ## 0.2.0
 
 Bring your own design system, and keep every graphic.

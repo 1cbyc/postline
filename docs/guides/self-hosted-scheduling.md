@@ -8,7 +8,7 @@ stay running on any machine with Node.js 20 or newer and persistent storage.
 Download and install the release package without npm publishing:
 
 ```sh
-npm install --global https://github.com/1cbyc/postline/releases/download/v2026.0.1.0/postline-0.1.0.tgz
+npm install --global postline
 postline --version
 ```
 
@@ -32,9 +32,14 @@ on every check, and a failed check is logged without stopping the daemon. `SIGIN
 and `SIGTERM` stop it cleanly.
 
 The machine must remain awake and connected. Keep `.postline/ledger.json` on
-persistent storage and run only one daemon for a content project. If a process dies
-during a network request, the durable `attempting` entry prevents an automatic
-duplicate; inspect the destination and use `postline mark` or `postline retry`.
+persistent storage. While a check runs, postline holds `.postline/publish.lock`, so
+a second daemon or a manual `postline publish` on the same project waits for the
+next check instead of sending the same post. (`--dry-run` doesn't take the lock.)
+A lock left by a process that crashed is cleared automatically on the same machine.
+
+If a process dies during a network request, the durable `attempting` entry prevents
+an automatic duplicate, and a request that ends without a clear answer is recorded
+as `uncertain`. Inspect the destination and use `postline mark` or `postline retry`.
 
 ## Keep it running with systemd
 

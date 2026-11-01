@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { Adapter, AdapterDeps, PublishInput, PublishResult } from "./types.js";
-import { expectOk, fetchWithTimeout, PublishError } from "./types.js";
+import { deliver, expectOk, fetchWithTimeout, PublishError } from "./types.js";
 import type { WebhookChannelConfig } from "../config.js";
 
 export function sign(secret: string, body: string): string {
@@ -37,12 +37,16 @@ export function webhook(name: string, cfg: WebhookChannelConfig, deps: AdapterDe
       const secret = deps.env[secretEnv];
       if (secret) headers["X-Postline-Signature"] = sign(secret, body);
 
-        const res = await expectOk(await fetchWithTimeout(deps, url, { method: "POST", headers, body }, `${name}: webhook`), `${name}: webhook`);
+      // The receiver may have acted on a request that timed out, so an unclear
+      // result is not retried. Receivers should still dedupe on X-Postline-Delivery.
+      const res = await deliver(`${name}: webhook`, async () =>
+        expectOk(await fetchWithTimeout(deps, url, { method: "POST", headers, body }, `${name}: webhook`), `${name}: webhook`),
+      );
       let reply: { id?: string; url?: string } = {};
       try {
         reply = (await res.json()) as typeof reply;
       } catch {}
-        return { id: reply.id ?? delivery, ...(reply.url === undefined ? {} : { url: reply.url }) };
+      return { id: reply.id ?? delivery, ...(reply.url === undefined ? {} : { url: reply.url }) };
     },
   };
 }

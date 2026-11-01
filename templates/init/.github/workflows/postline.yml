@@ -14,7 +14,8 @@ permissions:
   contents: write
 
 env:
-  POSTLINE_PACKAGE: https://github.com/1cbyc/postline/releases/download/v2026.0.1.0/postline-0.1.0.tgz
+  # Set by `postline init` to the version that created this project.
+  POSTLINE_VERSION: "__POSTLINE_VERSION__"
 
 jobs:
   check:
@@ -25,7 +26,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: npm install --global "$POSTLINE_PACKAGE"
+      - run: npm install --global "postline@$POSTLINE_VERSION"
       - run: postline lint
 
   publish:
@@ -45,7 +46,7 @@ jobs:
         with:
           node-version: 22
 
-      - run: npm install --global "$POSTLINE_PACKAGE"
+      - run: npm install --global "postline@$POSTLINE_VERSION"
 
       - name: configure signed ledger commits
         shell: bash
@@ -74,7 +75,7 @@ jobs:
           if [ ! -f .postline/ledger.json ]; then exit 0; fi
           git add -- .postline/ledger.json
           if git diff --cached --quiet; then exit 0; fi
-          git commit -S -m "postline: prepare deliveries" -m "Co-authored-by: insisong <emmanuelisaacnsisong@gmail.com>"
+          git commit -S -m "postline: prepare deliveries"
           git verify-commit HEAD
           git pull --rebase origin "$GITHUB_REF_NAME"
           git verify-commit HEAD
@@ -99,7 +100,7 @@ jobs:
           if [ ! -f .postline/ledger.json ]; then exit 0; fi
           git add -- .postline/ledger.json
           if git diff --cached --quiet; then exit 0; fi
-          git commit -S -m "postline: record delivery outcomes" -m "Co-authored-by: insisong <emmanuelisaacnsisong@gmail.com>"
+          git commit -S -m "postline: record delivery outcomes"
           git verify-commit HEAD
           git pull --rebase origin "$GITHUB_REF_NAME"
           git verify-commit HEAD

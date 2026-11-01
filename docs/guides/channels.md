@@ -55,6 +55,12 @@ Set `BLUESKY_IDENTIFIER` (your handle) and `BLUESKY_APP_PASSWORD`.
 Bluesky posts are limited to 300 characters, so most posts need a `variants.bluesky`.
 Images must be under 1 MB; if your PNG cards are larger, use `card.format: jpeg`.
 
+Each post gets a fixed record key built from its id, channel and scheduled time.
+Before posting, postline checks whether a record with that key already exists, so
+a retry after a timeout finds the first post instead of creating a second one. If
+it finds a record with different text (you edited the post after a lost attempt),
+it stops and asks you to check the account.
+
 ## Mastodon
 
 ```yaml
@@ -66,6 +72,10 @@ mastodon:
 
 Create an application under Preferences > Development with `write:statuses` and
 `write:media`. Store the access token as `MASTODON_ACCESS_TOKEN`.
+
+Every status carries an `Idempotency-Key`, so failed attempts are retried normally.
+Mastodon remembers keys for about an hour; with the default 15 minute schedule and
+`maxAttempts: 3`, every retry falls inside that window.
 
 ## Webhook
 
@@ -93,6 +103,10 @@ postline POSTs:
 Headers: `X-Postline-Delivery` (stable, use it to de-duplicate) and, when the secret
 is set, `X-Postline-Signature: sha256=<hex HMAC of the raw body>`. Any 2xx counts
 as success. If the response is JSON with `id` or `url`, those are recorded.
+
+A 4xx is retried on the next run. A timeout, dropped connection or 5xx is recorded
+as `uncertain` and not retried, because your receiver may already have acted on it.
+Check it, then run `postline mark` or `postline retry`.
 
 Use this for networks postline doesn't cover directly (Instagram, Facebook, X,
 Threads, TikTok) through Zapier, Make or n8n, or to route posts into a Slack

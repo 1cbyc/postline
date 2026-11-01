@@ -30,12 +30,12 @@ out, or the same posts on three networks. postline gives you:
 - **Your design system, not ours.** Point it at your design tokens, add your own CSS, or write your own card layouts in HTML.
 - **Every graphic kept.** A full-quality copy of each card is saved on your computer with a gallery to browse them later.
 - **Rules that block bad posts.** Hashtag limits, banned phrases, allowed link domains, emoji policy, character limits per network, and a check for broken text encoding.
-- **Boring, safe publishing.** Official APIs only. A post is sent at most once; if a run dies mid-send, postline stops and asks instead of guessing.
+- **Boring, safe publishing.** Official APIs only. A post is sent at most once; if a run dies mid-send or the network gives no clear answer, postline stops and asks instead of guessing.
 
 ## Quick start
 
 ```sh
-npm install --global https://github.com/1cbyc/postline/releases/download/v2026.0.1.0/postline-0.1.0.tgz
+npm install --global postline
 postline init my-content
 cd my-content
 npx playwright-core install chromium   # once, for rendering cards
@@ -93,40 +93,10 @@ channel. Full reference in [docs/guides/content-format.md](docs/guides/content-f
 
 ## Design and publishing
 
-Yes. Postline includes both the visual design system and the publishing process.
-
-For design, it can:
-
-- Generate branded image cards automatically.
-- Apply your logo, colours, typography, spacing, footer, labels and status chips.
-- Render rows, grid and statement layouts.
-- Produce square, portrait or landscape images.
-- Generate the final PNG or JPEG using Chromium.
-- Attach that image when publishing to supported channels.
-
-You control the appearance through `postline.config.yaml` and each post's `card`
-section. For example:
-
-```yaml
-card:
-  layout: rows
-  eyebrow: Product update
-  headline:
-    - What changed this week
-  items:
-    - title: Faster publishing
-      note: No GitHub Actions required
-      chip: shipped
-  footer: postline
-```
-
-Postline then handles the rest:
-
-1. Reads the post and design instructions.
-2. Checks the content and channel rules.
-3. Renders the branded card.
-4. Publishes the text and image at the scheduled time.
-5. Records the outcome in its ledger.
+Each post's `card` section becomes an image in your brand: logo, colours, font,
+labels and status chips, in a rows, grid or statement layout, at square, portrait
+or landscape size. Chromium renders it to PNG or JPEG, and the image goes out with
+the post on every channel that takes one.
 
 ### Does every post look the same?
 
@@ -150,6 +120,9 @@ a 27-line HTML template plus the studio's own tokens file.
 
 Full guide: [docs/guides/design-systems.md](docs/guides/design-systems.md).
 
+postline renders the layouts and brand you define. It doesn't invent a new
+composition for each post.
+
 ### Your graphics, kept
 
 Every card postline renders is also saved as a lossless, 3x PNG (3600 x 3600 for a
@@ -158,11 +131,6 @@ with the post text alongside it and an `index.html` gallery. Edited cards are sa
 as new versions, never overwritten. `postline library --open` opens the gallery and
 `postline export <id> --scale 4` makes a one-off copy at any size.
 Details: [docs/guides/graphics-library.md](docs/guides/graphics-library.md).
-
-The important distinction is that Postline is a configurable design renderer,
-not currently an AI designer. It reliably produces designs from the layouts and
-brand system you define, but it does not independently invent a completely new
-visual composition for every post.
 
 ### The design pipeline
 
@@ -199,7 +167,7 @@ layout and brand adjustments easier to inspect in a browser before publishing.
 | `postline layouts` | List built-in and custom layouts, tokens and stylesheet in use |
 | `postline publish [--dry-run] [--now ISO] [--catch-up] [--only ID]` | Send everything that is due; CI also uses its two-phase prepare/resume flags |
 | `postline daemon [--every MINUTES]` | Publish continuously on an always-on machine, without GitHub Actions |
-| `postline retry <id> <channel>` | Clear a failed or stuck entry so it sends again |
+| `postline retry <id> <channel>` | Clear a failed, uncertain or stuck entry so it sends again |
 | `postline mark <id> <channel> <published\|skipped>` | Record an outcome by hand |
 
 ## Channels
@@ -207,7 +175,7 @@ layout and brand adjustments easier to inspect in a browser before publishing.
 | Type | Notes |
 | --- | --- |
 | `linkedin` | Company pages or members, via the Posts API. Hashtags stay clickable. |
-| `bluesky` | App password login. Links and hashtags become rich-text facets. |
+| `bluesky` | App password login. Links and hashtags become rich-text facets. A fixed record key per post makes retries safe. |
 | `mastodon` | Any instance. Uses an idempotency key so retries don't double post. |
 | `webhook` | Signed JSON POST. Use it for Zapier, Make, n8n, Slack approvals or your own service. |
 | `files` | Writes Markdown + image into a folder, e.g. your static site's blog or an archive. |

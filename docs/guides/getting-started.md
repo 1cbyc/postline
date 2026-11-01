@@ -6,7 +6,7 @@ turning on scheduled publishing.
 ## 1. Create the project
 
 ```sh
-npm install --global https://github.com/1cbyc/postline/releases/download/v2026.0.1.0/postline-0.1.0.tgz
+npm install --global postline
 postline init acme-content
 cd acme-content
 git init
