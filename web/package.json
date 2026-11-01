@@ -1,0 +1,23 @@
+{
+  "name": "postline-site",
+  "private": true,
+  "description": "postline.nsisong.com: the postline website and documentation, served by Cloudflare Workers.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "check": "tsc -p tsconfig.json",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "marked": "18.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3",
+    "wrangler": "4.156.0"
+  }
+}

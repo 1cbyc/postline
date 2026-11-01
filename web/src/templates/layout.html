@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}}</title>
+  <meta name="description" content="{{description}}">
+  <link rel="canonical" href="{{canonical}}">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#1034a6">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="postline">
+  <meta property="og:title" content="{{title}}">
+  <meta property="og:description" content="{{description}}">
+  <meta property="og:url" content="{{canonical}}">
+  <meta property="og:image" content="{{site}}/images/grid-landscape.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/site.js" defer></script>
+</head>
+<body class="{{bodyClass}}">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap bar">
+      <a class="brand" href="/" aria-label="postline home">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="8"/><path d="M9 21.5h14"/><circle cx="11" cy="12" r="2.5"/><path d="M16 12h7"/></svg>
+        <span>postline</span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="/docs/">Docs</a>
+        <a href="/docs/channels/">Channels</a>
+        <a href="{{github}}" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+{{body}}
+  </main>
+  <footer class="site-footer">
+    <div class="wrap foot">
+      <p class="made">postline {{version}} · built by <a href="https://nsisonglabs.com" rel="noopener">Nsisong Labs</a></p>
+      <ul>
+        <li><a href="/docs/">Docs</a></li>
+        <li><a href="{{github}}" rel="noopener">GitHub</a></li>
+        <li><a href="{{github}}/releases" rel="noopener">Releases</a></li>
+        <li><a href="{{github}}/blob/main/LICENSE" rel="noopener">License</a></li>
+      </ul>
+      <p class="legal">Free to install and use, including commercially. The source is available under the <a href="{{github}}/blob/main/LICENSE" rel="noopener">Nsisong Source-Available License</a>; copying, modifying or redistributing the code needs written permission. © {{year}} Isaac Emmanuel.</p>
+    </div>
+  </footer>
+</body>
+</html>

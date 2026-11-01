@@ -1,0 +1,27 @@
+<div class="doc-shell wrap">
+  <aside class="doc-nav">
+    <details class="doc-nav-menu" data-doc-nav open>
+      <summary>Guides</summary>
+      <ol>
+{{nav}}
+      </ol>
+    </details>
+  </aside>
+  <article class="doc">
+    <header class="doc-head">
+      <p class="eyebrow"><a href="/docs/">Docs</a></p>
+      <h1>{{title}}</h1>
+    </header>
+    <div class="prose">
+{{content}}
+    </div>
+    <footer class="doc-foot">
+      <nav class="pager" aria-label="Guides">
+        {{prev}}
+        {{next}}
+      </nav>
+      <p class="source"><a href="{{source}}" rel="noopener">Edit this guide on GitHub</a></p>
+    </footer>
+  </article>
+  {{toc}}
+</div>

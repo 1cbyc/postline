@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // A Worker that only serves static assets: no script, no Pages.
+  "name": "postline-site",
+  "compatibility_date": "2026-10-30",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "postline.nsisong.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}
