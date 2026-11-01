@@ -213,4 +213,5 @@ Set `POSTLINE_CHROMIUM` to use a Chromium you already have.
 
 ## License
 
-MIT. Built and maintained by [Isaac Emmanuel](https://nsisong.com) at [Nsisong Labs](https://nsisonglabs.com).
+Source-available; see [LICENSE](LICENSE). Earlier license terms are preserved in
+[LICENSE.previous](LICENSE.previous). Built and maintained by [Isaac Emmanuel](https://nsisong.com) at [Nsisong Labs](https://nsisonglabs.com).

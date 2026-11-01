@@ -12,6 +12,7 @@ Safer delivery.
 - The ledger is flushed to disk before it replaces the old one
 - `postline init` pins the generated GitHub workflow to its own version and installs it from npm; the workflow no longer adds a maintainer `Co-authored-by` line to your ledger commits
 - Install from npm: `npm install --global postline`
+- New license: the Nsisong Source-Available License 1.1 (see `LICENSE`). Earlier grants are preserved in `LICENSE.previous`
 
 ## 0.2.0
 
