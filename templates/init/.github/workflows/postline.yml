@@ -18,16 +18,18 @@ env:
   POSTLINE_VERSION: "__POSTLINE_VERSION__"
 
 jobs:
+  # On pull requests: lint, render the changed posts' cards and comment them on the PR.
   check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # pushes card images to the postline-previews branch
+      pull-requests: write   # comments on the pull request
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: 1cbyc/postline@v__POSTLINE_VERSION__
         with:
-          node-version: 22
-      - run: npm install --global "postline@$POSTLINE_VERSION"
-      - run: postline lint
+          fail-on-error: "true"
 
   publish:
     if: github.event_name != 'pull_request'

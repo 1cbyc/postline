@@ -52,6 +52,8 @@ export interface LinkedInChannelConfig extends ChannelBase {
   person?: string;
   version: string;
   tokenEnv: string;
+  /** YYYY-MM-DD the access token stops working. LinkedIn tokens can't be inspected, so doctor relies on this. */
+  tokenExpires?: string;
 }
 
 export interface BlueskyChannelConfig extends ChannelBase {
@@ -101,6 +103,21 @@ export interface DesignConfig {
   layouts: Record<string, string>;
 }
 
+export const NOTIFY_EVENTS = ["failed", "uncertain", "blocked", "doctor"] as const;
+export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
+export const NOTIFY_FORMATS = ["json", "slack", "discord", "ntfy"] as const;
+export type NotifyFormat = (typeof NOTIFY_FORMATS)[number];
+
+export interface NotifyConfig {
+  /** Where alerts go. Webhook URLs are often secrets, so prefer urlEnv. */
+  url?: string;
+  urlEnv: string;
+  format: NotifyFormat;
+  /** Signs JSON alerts the same way as the webhook channel, when set. */
+  secretEnv: string;
+  on: NotifyEvent[];
+}
+
 export interface LibraryConfig {
   enabled: boolean;
   /** Folder on this computer where full-quality copies of every card are kept. */
@@ -124,6 +141,7 @@ export interface Config {
   rules: Rules;
   design: DesignConfig;
   library: LibraryConfig;
+  notify?: NotifyConfig;
 }
 
 const CHANNEL_TYPES = ["linkedin", "bluesky", "mastodon", "webhook", "files"] as const;
@@ -254,6 +272,35 @@ function optionalMaxChars(value: unknown, label: string): number | undefined {
   return value == null ? undefined : numberValue(value, label, 1, { min: 1, max: 1_000_000, integer: true });
 }
 
+function optionalDate(value: unknown, label: string): string | undefined {
+  if (value == null) return undefined;
+  // YAML reads an unquoted 2026-12-31 as a Date.
+  const text = value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : value;
+  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+    throw new ConfigError(`${label} must be a date like 2026-12-31`);
+  }
+  return text;
+}
+
+function normalizeNotify(input: unknown): NotifyConfig | undefined {
+  if (input == null || input === false) return undefined;
+  const raw = record(input, "notify");
+  if (raw.url != null && raw.urlEnv != null) throw new ConfigError("notify must not set both url and urlEnv");
+  const format = stringValue(raw.format, "notify.format", "json");
+  if (!NOTIFY_FORMATS.includes(format as NotifyFormat)) throw new ConfigError(`notify.format must be one of ${NOTIFY_FORMATS.join(", ")}`);
+  const on = stringArray(raw.on, "notify.on", [...NOTIFY_EVENTS]);
+  if (on.length === 0 || on.some((event) => !NOTIFY_EVENTS.includes(event as NotifyEvent))) {
+    throw new ConfigError(`notify.on must list some of ${NOTIFY_EVENTS.join(", ")}`);
+  }
+  return {
+    ...(raw.url == null ? {} : { url: httpUrl(raw.url, "notify.url") }),
+    urlEnv: envName(raw.urlEnv, "notify.urlEnv", "POSTLINE_NOTIFY_URL"),
+    format: format as NotifyFormat,
+    secretEnv: envName(raw.secretEnv, "notify.secretEnv", "POSTLINE_NOTIFY_SECRET"),
+    on: [...new Set(on)] as NotifyEvent[],
+  };
+}
+
 function normalizeChannel(name: string, input: unknown): ChannelConfig {
   if (!CHANNEL_NAME.test(name)) throw new ConfigError(`channel name "${name}" is not safe`);
   const raw = record(input, `channels.${name}`);
@@ -275,8 +322,10 @@ function normalizeChannel(name: string, input: unknown): ChannelConfig {
       const version = stringValue(raw.version, `channels.${name}.version`, "202609");
       if (!/^20\d{4}$/.test(version)) throw new ConfigError(`channels.${name}.version must be YYYYMM`);
       const tokenEnv = envName(raw.tokenEnv, `channels.${name}.tokenEnv`, "LINKEDIN_ACCESS_TOKEN");
-      if (organization) return { ...common, type: "linkedin", organization, version, tokenEnv };
-      if (person) return { ...common, type: "linkedin", person, version, tokenEnv };
+      const tokenExpires = optionalDate(raw.tokenExpires, `channels.${name}.tokenExpires`);
+      const extra = tokenExpires === undefined ? {} : { tokenExpires };
+      if (organization) return { ...common, ...extra, type: "linkedin", organization, version, tokenEnv };
+      if (person) return { ...common, ...extra, type: "linkedin", person, version, tokenEnv };
       throw new ConfigError(`channels.${name} must set exactly one of organization or person`);
     }
     case "bluesky":
@@ -449,6 +498,7 @@ export function normalizeConfig(
   const fontUrl = fontRaw.url == null ? undefined : httpUrl(fontRaw.url, "brand.font.url");
   const fontFile = optionalString(fontRaw.file, "brand.font.file");
   if (fontUrl && fontFile) throw new ConfigError("brand.font must not set both url and file");
+  const notify = normalizeNotify(raw.notify);
   const brandUrl = optionalString(brandRaw.url, "brand.url");
   const brandLogo = optionalString(brandRaw.logo, "brand.logo");
 
@@ -505,5 +555,6 @@ export function normalizeConfig(
       ),
       scale: numberValue(libraryRaw.scale, "library.scale", 3, { min: 1, max: 4 }),
     },
+    ...(notify ? { notify } : {}),
   };
 }

@@ -1,0 +1,29 @@
+name: preview
+
+# Dogfood the PR preview action on the example projects.
+on:
+  pull_request:
+    paths:
+      - "examples/**"
+      - "action.yml"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [examples/nsisonglabs, examples/nsisong]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        with:
+          working-directory: ${{ matrix.project }}
