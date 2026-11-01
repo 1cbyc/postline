@@ -1,4 +1,4 @@
-> **Licensing update (31 October 2026):** The current policy requires prior written permission for reuse and a separate agreement for AI training. See [LICENSE](LICENSE). Earlier grants remain valid for previously licensed material; [LICENSE.previous](LICENSE.previous) preserves those terms. Any older license descriptions below describe the previous policy. Contact [ei@nsisong.com](mailto:ei@nsisong.com).
+> **License:** unmodified postline is free to install and use, including commercially, and you may use the cards and posts it makes from your content as you wish. The code is source-available: copying, modifying or redistributing it, offering it as a hosted service, or using it for AI training needs prior written permission (for AI training, a separate written agreement) from Isaac Emmanuel at [ei@nsisong.com](mailto:ei@nsisong.com). See [LICENSE](LICENSE); earlier grants are preserved in [LICENSE.previous](LICENSE.previous).
 
 # postline
 
@@ -216,5 +216,7 @@ live in [`web/`](web); see [web/README.md](web/README.md).
 
 ## License
 
-Source-available; see [LICENSE](LICENSE). Earlier license terms are preserved in
-[LICENSE.previous](LICENSE.previous). Built and maintained by [Isaac Emmanuel](https://nsisong.com) at [Nsisong Labs](https://nsisonglabs.com).
+Unmodified postline is free to install and use, including commercially. The code is source-available:
+copying, modifying or redistributing it, offering it as a hosted service, or using
+it for AI training needs written permission. See [LICENSE](LICENSE); earlier
+license terms are preserved in [LICENSE.previous](LICENSE.previous). Built and maintained by [Isaac Emmanuel](https://nsisong.com) at [Nsisong Labs](https://nsisonglabs.com).
