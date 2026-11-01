@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+A website, and a clearer license.
+
+- postline now has a website with the full guides: https://postline.nsisong.com
+- License 1.2 says plainly what was intended: anyone may install and run postline, including commercially, edit the files `postline init` creates, and keep everything postline produces. Copying, modifying or redistributing the code, offering it as a hosted service, and AI training still need written permission
+
 ## 0.2.1
 
 Safer delivery.
