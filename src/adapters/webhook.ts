@@ -42,11 +42,20 @@ export function webhook(name: string, cfg: WebhookChannelConfig, deps: AdapterDe
       const res = await deliver(`${name}: webhook`, async () =>
         expectOk(await fetchWithTimeout(deps, url, { method: "POST", headers, body }, `${name}: webhook`), `${name}: webhook`),
       );
-      let reply: { id?: string; url?: string } = {};
-      try {
-        reply = (await res.json()) as typeof reply;
-      } catch {}
-      return { id: reply.id ?? delivery, ...(reply.url === undefined ? {} : { url: reply.url }) };
+      // Any 2xx counts. A reply is optional, but a JSON reply that doesn't parse is worth a note.
+      let reply: { id?: unknown; url?: unknown } = {};
+      let warning: string | undefined;
+      const raw = await res.text().catch(() => "");
+      if (raw.trim()) {
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          if (typeof parsed === "object" && parsed !== null) reply = parsed;
+        } catch {
+          if ((res.headers.get("content-type") ?? "").includes("json")) warning = `${name}: the receiver's reply is not valid JSON, so its id and url were ignored`;
+        }
+      }
+      const id = typeof reply.id === "string" ? reply.id : delivery;
+      return { id, ...(typeof reply.url === "string" ? { url: reply.url } : {}), ...(warning ? { warning } : {}) };
     },
   };
 }

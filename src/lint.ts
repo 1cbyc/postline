@@ -97,7 +97,9 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
       else if (!existsSync(post.image) || !statSync(post.image).isFile()) add(post, "image-missing", "error", `image not found: ${post.image}`);
       const ext = extname(post.image).toLowerCase();
       if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") add(post, "image-format", "error", "image must be PNG or JPEG");
-      if (!post.alt?.trim()) add(post, "image-alt", "warn", "set alt text for the image");
+      if (!post.alt?.trim()) {
+        add(post, "image-alt", cfg.rules.requireAlt ? "error" : "warn", "set alt: for the image, so screen reader users know what it shows");
+      }
     }
     if (post.card) {
       post.card.headline.forEach((line, i) => {

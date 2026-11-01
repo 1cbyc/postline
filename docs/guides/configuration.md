@@ -45,6 +45,7 @@ card:
   format: png                # or jpeg
   quality: 90                # jpeg only
   scale: 2                   # device pixel ratio; 2 gives crisp text
+  allowedHosts: []           # extra hosts cards may load from; see design-systems.md
 
 publish:
   lateMinutes: 180           # skip posts this far past their slot
@@ -74,6 +75,7 @@ rules:
   allowedLinkDomains: []     # empty means any domain
   hookMaxChars: 140          # first line, warning only
   requireImage: false        # every ready post needs a card or image
+  requireAlt: false          # missing alt text on an image post is an error, not a warning
   topicCooldownDays: 14      # warn when a topic repeats inside this window
   bannedPhrases: []
 ```

@@ -140,3 +140,21 @@ renders at a higher pixel density, so text stays sharp.
 - `postline render <id> --html --force` writes the generated HTML next to the PNG so you can open it in a browser and use the developer tools.
 - For custom layouts, `card.headline` is optional, so templates can be driven entirely by `card.data`.
 - Fonts referenced by `@font-face` in your stylesheet must be reachable when rendering. For offline rendering, use `brand.font.file`.
+
+### Rendering is sandboxed
+
+Cards render with JavaScript turned off, and the page can only load:
+
+- inline `data:` URLs (the logo and embedded fonts are already inlined),
+- the host in `brand.font.url` (plus `fonts.gstatic.com` for Google Fonts),
+- hosts you list under `card.allowedHosts`, over HTTPS.
+
+Everything else is blocked. That matters because post text ends up in the page,
+and `{{{raw}}}` inserts it without escaping: a post can't run scripts or send
+data anywhere while its card renders. If a template loads images from your own
+CDN, allow it:
+
+```yaml
+card:
+  allowedHosts: [images.example.com, "*.cdn.example.com"]
+```

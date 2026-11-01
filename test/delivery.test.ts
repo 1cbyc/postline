@@ -112,7 +112,7 @@ test("a card that fails to render is not marked as attempted", async () => {
   const ledger = new Ledger(cfg.stateDir);
   const out = await publishDue(cfg, [p], ledger, opts(f, "2026-10-27T13:05:00Z", { renderer: () => broken }));
   assert.deepEqual(out.map((o) => o.result), ["failed"]);
-  assert.equal(ledger.get("p1", "hook")?.attempts, 0);
+  assert.equal(ledger.get("p1", "hook")?.attempts, 1);
   assert.equal(calls.length, 0);
 });
 
@@ -180,4 +180,65 @@ test("Bluesky refuses to treat a different post at the same key as sent", async 
   assert.deepEqual(out.map((o) => o.result), ["failed"]);
   assert.match(out[0]!.detail!, /different text/);
   assert.ok(calls.every((url) => !url.endsWith("createRecord")));
+});
+
+test("a card that can never render stops retrying after maxAttempts", async () => {
+  const cfg = config({ channels: { hook: { type: "webhook", url: "https://hooks.example/x" } }, publish: { maxAttempts: 2 } });
+  const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [hook]\ncard:\n  headline: [One]");
+  const broken = { render: async () => Promise.reject(new Error("template error")) } as unknown as Renderer;
+  const { f } = fakeFetch(() => new Response("ok"));
+  const ledger = new Ledger(cfg.stateDir);
+  const run = (at: string) => publishDue(cfg, [p], ledger, opts(f, at, { renderer: () => broken }));
+  assert.deepEqual((await run("2026-10-27T13:05:00Z")).map((o) => o.result), ["failed"]);
+  assert.deepEqual((await run("2026-10-27T13:20:00Z")).map((o) => o.result), ["failed"]);
+  assert.deepEqual((await run("2026-10-27T13:35:00Z")).map((o) => o.result), ["blocked"]);
+});
+
+function mastodonSetup() {
+  const cfg = config({ channels: { mastodon: { type: "mastodon", instance: "https://social.example" } } });
+  const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [mastodon]", "Hello fediverse.");
+  return { cfg, p };
+}
+
+test("an unclear Mastodon failure is retried inside the idempotency window, with the same key", async () => {
+  const { cfg, p } = mastodonSetup();
+  const keys: string[] = [];
+  let calls = 0;
+  const f = (async (_url: string, init?: RequestInit) => {
+    keys.push(String((init?.headers as Record<string, string>)["Idempotency-Key"]));
+    calls++;
+    return calls === 1 ? new Response("bad gateway", { status: 502 }) : Response.json({ id: "9", url: "https://social.example/@me/9" });
+  }) as unknown as typeof fetch;
+  const ledger = new Ledger(cfg.stateDir);
+  const env = { ...opts(f, "2026-10-27T13:05:00Z").deps.env, MASTODON_ACCESS_TOKEN: "m" };
+  const first = await publishDue(cfg, [p], ledger, { ...opts(f, "2026-10-27T13:05:00Z"), deps: { env, fetch: f, root: "/" } });
+  assert.deepEqual(first.map((o) => o.result), ["failed"]);
+  assert.ok(ledger.get("p1", "mastodon")?.retryBefore);
+  const second = await publishDue(cfg, [p], ledger, { ...opts(f, "2026-10-27T13:20:00Z"), deps: { env, fetch: f, root: "/" } });
+  assert.deepEqual(second.map((o) => o.result), ["published"]);
+  assert.equal(new Set(keys).size, 1);
+  assert.equal(ledger.get("p1", "mastodon")?.retryBefore, undefined);
+});
+
+test("once Mastodon's idempotency window has passed, an unclear failure is uncertain, not retried", async () => {
+  const { cfg, p } = mastodonSetup();
+  const { f, calls } = fakeFetch(() => new Response("bad gateway", { status: 502 }));
+  const ledger = new Ledger(cfg.stateDir);
+  const env = { MASTODON_ACCESS_TOKEN: "m" };
+  await publishDue(cfg, [p], ledger, { ...opts(f, "2026-10-27T13:05:00Z"), deps: { env, fetch: f, root: "/" } });
+  const sent = calls.length;
+  const late = await publishDue(cfg, [p], ledger, { ...opts(f, "2026-10-27T14:30:00Z"), catchUp: true, deps: { env, fetch: f, root: "/" } });
+  assert.deepEqual(late.map((o) => o.result), ["blocked"]);
+  assert.equal(calls.length, sent);
+  assert.equal(ledger.get("p1", "mastodon")?.status, "uncertain");
+});
+
+test("a webhook whose JSON reply doesn't parse still counts as sent, with a warning", async () => {
+  const cfg = config({ channels: { hook: { type: "webhook", url: "https://hooks.example/x" } } });
+  const p = post(cfg, "id: p1\nat: 2026-10-27 09:00\nchannels: [hook]");
+  const { f } = fakeFetch(() => new Response("{not json", { status: 200, headers: { "content-type": "application/json" } }));
+  const lines: string[] = [];
+  const out = await publishDue(cfg, [p], new Ledger(cfg.stateDir), opts(f, "2026-10-27T13:05:00Z", { log: (l) => lines.push(l) }));
+  assert.deepEqual(out.map((o) => o.result), ["published"]);
+  assert.ok(lines.some((l) => /not valid JSON/.test(l)));
 });

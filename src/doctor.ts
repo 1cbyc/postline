@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { ChannelConfig, Config, LinkedInChannelConfig } from "./config.js";
 import type { Post } from "./content.js";
 import { lint } from "./lint.js";
+import { contrastRatio } from "./contrast.js";
 import { Ledger } from "./ledger.js";
 import { humanLabel } from "./time.js";
 import { notifyUrl, type Alert } from "./notify.js";
@@ -155,6 +156,27 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
     .filter((p) => p.status === "ready" && p.when && p.when.getTime() > now.getTime())
     .sort((a, b) => a.when!.getTime() - b.when!.getTime())[0];
   if (next?.when) checks.push({ level: "info", area: "posts", message: `next post: ${next.id} at ${humanLabel(next.when, cfg.timezone)}` });
+
+  // Brand colours: card text has to be readable. WCAG AA asks for 4.5:1 for
+  // body text; headlines are large, so 3:1 is the floor there.
+  const { colors } = cfg.brand;
+  const pairs: { name: string; fg: string; bg: string; min: number }[] = [
+    { name: "text on background", fg: colors.text, bg: colors.background, min: 4.5 },
+    { name: "muted text on background", fg: colors.muted, bg: colors.background, min: 4.5 },
+    { name: "text on panels", fg: colors.text, bg: colors.panel, min: 4.5 },
+    { name: "accent on background", fg: colors.accent, bg: colors.background, min: 3 },
+    ...(["ok", "warn", "bad"] as const).map((tone) => ({ name: `${tone} chip text`, fg: colors[tone][1], bg: colors[tone][0], min: 4.5 })),
+  ];
+  const weak: string[] = [];
+  let checked = 0;
+  for (const pair of pairs) {
+    const ratio = contrastRatio(pair.fg, pair.bg);
+    if (ratio === undefined) continue;
+    checked++;
+    if (ratio < pair.min) weak.push(`${pair.name} ${ratio.toFixed(1)}:1 (needs ${pair.min}:1)`);
+  }
+  if (weak.length) checks.push({ level: "warn", area: "brand", message: `colours below WCAG AA contrast: ${weak.join("; ")}` });
+  else if (checked) checks.push({ level: "ok", area: "brand", message: `${checked} colour pairs meet WCAG AA contrast` });
 
   // Rendering.
   if (posts.some((p) => p.card) && opts.launchChromium) {

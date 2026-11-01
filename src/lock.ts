@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 
@@ -49,12 +49,22 @@ export async function withStateLock<T>(stateDir: string, fn: () => Promise<T>): 
       fd = openSync(file, "wx");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST" || tries > 0) throw lockError(file, error);
-      const holder = readHolder(file);
+      // The holder creates the file, then writes its details; give it a moment.
+      let holder = readHolder(file);
+      for (let wait = 0; !holder && wait < 10 && existsSync(file); wait++) {
+        await new Promise((done) => setTimeout(done, 50));
+        holder = readHolder(file);
+      }
       if (holder && (holder.host !== me.host || isRunning(holder.pid))) {
         throw new LockedError(
           `another postline process (pid ${holder.pid} on ${holder.host}, since ${holder.since}) is using ${stateDir}; ` +
             `if it is no longer running, delete ${file}`,
         );
+      }
+      // Released while we waited: try to take it again.
+      if (!holder && !existsSync(file)) {
+        tries = -1;
+        continue;
       }
       if (!holder) throw new LockedError(`${file} exists but is unreadable; if no postline process is running, delete it`);
       rmSync(file, { force: true });

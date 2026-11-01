@@ -16,6 +16,10 @@ export interface Entry {
   remoteId?: string;
   url?: string;
   error?: string;
+  /** When the first attempt for this post and channel started. */
+  firstAttemptAt?: string;
+  /** A failed send may only be retried before this time (e.g. Mastodon's idempotency window). */
+  retryBefore?: string;
 }
 
 interface LedgerFile {
@@ -49,7 +53,7 @@ function readLedger(file: string): LedgerFile {
     if (typeof entry.attempts !== "number" || !Number.isInteger(entry.attempts) || entry.attempts < 0) {
       throw new Error(`ledger entry ${key} has invalid attempts`);
     }
-    for (const field of ["remoteId", "url", "error"] as const) {
+    for (const field of ["remoteId", "url", "error", "firstAttemptAt", "retryBefore"] as const) {
       if (entry[field] != null && typeof entry[field] !== "string") throw new Error(`ledger entry ${key}.${field} must be a string`);
     }
     entries[key] = {
@@ -59,6 +63,8 @@ function readLedger(file: string): LedgerFile {
       ...(typeof entry.remoteId === "string" ? { remoteId: entry.remoteId } : {}),
       ...(typeof entry.url === "string" ? { url: entry.url } : {}),
       ...(typeof entry.error === "string" ? { error: entry.error } : {}),
+      ...(typeof entry.firstAttemptAt === "string" ? { firstAttemptAt: entry.firstAttemptAt } : {}),
+      ...(typeof entry.retryBefore === "string" ? { retryBefore: entry.retryBefore } : {}),
     };
   }
   return { version: 1, entries };
@@ -109,8 +115,13 @@ export class Ledger {
       ...patch,
       updatedAt: now.toISOString(),
     };
-    if (patch.status === "attempting") next.attempts = (prev?.attempts ?? 0) + 1;
+    if (patch.status === "attempting") {
+      next.attempts = (prev?.attempts ?? 0) + 1;
+      next.firstAttemptAt ??= next.updatedAt;
+    }
     if (patch.status === "published") delete next.error;
+    // A retry deadline only belongs to the failure that set it.
+    if (patch.retryBefore === undefined) delete next.retryBefore;
     this.data.entries[k] = next;
     return next;
   }

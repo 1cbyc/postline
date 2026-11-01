@@ -122,3 +122,9 @@ test("doctor warnings are sent as alerts too", () => {
   const alerts = doctorAlerts([{ level: "warn", area: "linkedin", message: "access token expires in 9 days" }, { level: "info", area: "x", message: "y" }]);
   assert.deepEqual(alerts.map((a) => a.message), ["warning: linkedin: access token expires in 9 days"]);
 });
+
+test("doctor warns when brand colours fail WCAG AA contrast", async () => {
+  const cfg = config({ brand: { name: "T", colors: { background: "#ffffff", text: "#999999" } } });
+  const checks = await runDoctor({ cfg, posts: [], now: NOW, env: {}, version: "0.3.2" });
+  assert.match(find(checks, "brand", /below WCAG AA/)?.message ?? "", /text on background 2\.8:1/);
+});

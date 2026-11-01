@@ -38,6 +38,8 @@ export interface Rules {
   allowedLinkDomains: string[];
   hookMaxChars: number;
   requireImage: boolean;
+  /** Missing alt text on an image post is an error instead of a warning. */
+  requireAlt: boolean;
   topicCooldownDays: number;
   bannedPhrases: string[];
 }
@@ -135,7 +137,14 @@ export interface Config {
   postsDir: string;
   outDir: string;
   stateDir: string;
-  card: { size: CardSize; format: "png" | "jpeg"; quality: number; scale: number };
+  card: {
+    size: CardSize;
+    format: "png" | "jpeg";
+    quality: number;
+    scale: number;
+    /** Extra hosts a card may load from while rendering; everything else is blocked. */
+    allowedHosts: string[];
+  };
   publish: { lateMinutes: number; maxAttempts: number; requestTimeoutMs: number };
   channels: Record<string, ChannelConfig>;
   rules: Rules;
@@ -530,6 +539,11 @@ export function normalizeConfig(
       format: formatValue,
       quality: numberValue(cardRaw.quality, "card.quality", 90, { min: 1, max: 100, integer: true }),
       scale: numberValue(cardRaw.scale, "card.scale", 2, { min: 1, max: 4 }),
+      allowedHosts: stringArray(cardRaw.allowedHosts, "card.allowedHosts").map((host) => {
+        const h = host.trim().toLowerCase();
+        if (!/^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h)) throw new ConfigError(`card.allowedHosts: "${host}" is not a host name`);
+        return h;
+      }),
     },
     publish: {
       lateMinutes: numberValue(publishRaw.lateMinutes, "publish.lateMinutes", 180, { min: 0, max: 525_600 }),
@@ -543,6 +557,7 @@ export function normalizeConfig(
       allowedLinkDomains: stringArray(rulesRaw.allowedLinkDomains, "rules.allowedLinkDomains"),
       hookMaxChars: numberValue(rulesRaw.hookMaxChars, "rules.hookMaxChars", 140, { min: 1, max: 100_000, integer: true }),
       requireImage: booleanValue(rulesRaw.requireImage, "rules.requireImage", false),
+      requireAlt: booleanValue(rulesRaw.requireAlt, "rules.requireAlt", false),
       topicCooldownDays: numberValue(rulesRaw.topicCooldownDays, "rules.topicCooldownDays", 14, { min: 0, max: 3650 }),
       bannedPhrases: stringArray(rulesRaw.bannedPhrases, "rules.bannedPhrases"),
     },

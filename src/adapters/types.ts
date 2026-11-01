@@ -13,11 +13,15 @@ export interface PublishInput {
   channel: string;
   text: string;
   image?: MediaInput;
+  /** When the first attempt for this post and channel started; this attempt if it's the first. */
+  firstAttemptAt?: Date;
 }
 
 export interface PublishResult {
   id: string;
   url?: string;
+  /** Sent, but something about the reply is worth logging. */
+  warning?: string;
 }
 
 export interface Adapter {
@@ -66,6 +70,8 @@ export class PublishError extends Error {
     message: string,
     readonly status?: number,
     readonly body?: string,
+    /** Retrying is only safe before this time; after it, the send counts as uncertain. */
+    readonly retryBefore?: Date,
   ) {
     super(message);
   }

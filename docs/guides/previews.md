@@ -49,7 +49,7 @@ jobs:
       pull-requests: write   # comments on the pull request
     steps:
       - uses: actions/checkout@v4
-      - uses: 1cbyc/postline@v0.3.1
+      - uses: 1cbyc/postline@v0.3.2
         with:
           fail-on-error: "true"     # fail the check when a changed post has lint errors
           # working-directory: marketing   # where postline.config.yaml lives

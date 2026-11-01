@@ -35,6 +35,31 @@ export interface ExportOptions {
   out: string;
 }
 
+/** Hosts a card page may load from: the brand font, plus any the config allows. */
+export function allowedRenderHosts(cfg: Config): string[] {
+  const hosts = new Set(cfg.card.allowedHosts);
+  if (cfg.brand.font.url) {
+    const host = new URL(cfg.brand.font.url).hostname.toLowerCase();
+    hosts.add(host);
+    // Google Fonts' stylesheet loads the font files from a second host.
+    if (host === "fonts.googleapis.com") hosts.add("fonts.gstatic.com");
+  }
+  return [...hosts];
+}
+
+export function hostAllowedForRender(url: string, hosts: string[]): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol === "data:" || parsed.protocol === "about:") return true;
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return hosts.some((allowed) => (allowed.startsWith("*.") ? host.endsWith(allowed.slice(1)) : host === allowed));
+}
+
 export function cardFile(cfg: Config, post: Post): string {
   assertSafeFileStem(post.id, "post id");
   return resolveInside(join(cfg.outDir, "cards"), `${post.id}.${cfg.card.format === "jpeg" ? "jpg" : "png"}`);
@@ -75,7 +100,12 @@ export class Renderer {
   private async shoot(html: string, size: CardSize, scale: number, format: "png" | "jpeg", quality: number): Promise<Buffer> {
     const { width, height } = SIZES[size];
     const browser = await this.page();
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+    // Post text ends up in the page (custom templates may even insert it raw), so
+    // cards render with scripts off and can only reach the font host and any
+    // hosts the config allows. Nothing else leaves the machine.
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale, javaScriptEnabled: false });
+    const hosts = allowedRenderHosts(this.cfg);
+    await page.route("**/*", (route) => (hostAllowedForRender(route.request().url(), hosts) ? route.continue() : route.abort("blockedbyclient")));
     try {
       await page.setContent(html, { waitUntil: "networkidle" });
       await page.evaluate(() => document.fonts.ready);
