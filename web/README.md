@@ -45,7 +45,7 @@ Builds, so pushes to `main` deploy automatically. Its build settings
 | Root directory | `web` |
 | Build command | `npm run build` |
 | Deploy command | `npx wrangler deploy` |
-| Non-production branch deploy command | `npx wrangler versions upload` |
+| Non-production branch deploy command | `npx wrangler preview` (needs the `previews` block in `wrangler.jsonc`) |
 
 To deploy by hand instead, run `npm run deploy`. It attaches `postline.nsisong.com`
 as a custom domain, so the `nsisong.com` zone must be in the account set by
