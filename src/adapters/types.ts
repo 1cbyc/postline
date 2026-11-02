@@ -13,11 +13,19 @@ export interface PublishInput {
   channel: string;
   text: string;
   image?: MediaInput;
+  /** When this attempt started, on the publish run's clock. */
+  attemptStartedAt?: Date;
+  /** A deadline left by an earlier unclear send; past it, sending again could duplicate. */
+  retryBefore?: Date;
+  /** The publish run's clock, for checks made just before the post is sent. */
+  now?: () => Date;
 }
 
 export interface PublishResult {
   id: string;
   url?: string;
+  /** Sent, but something about the reply is worth logging. */
+  warning?: string;
 }
 
 export interface Adapter {
@@ -66,6 +74,8 @@ export class PublishError extends Error {
     message: string,
     readonly status?: number,
     readonly body?: string,
+    /** Retrying is only safe before this time; after it, the send counts as uncertain. */
+    readonly retryBefore?: Date,
   ) {
     super(message);
   }

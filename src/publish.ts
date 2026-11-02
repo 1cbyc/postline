@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import { type Post, textFor } from "./content.js";
 import { Ledger } from "./ledger.js";
 import { lint } from "./lint.js";
-import { createAdapter, DeliveryUncertainError, type AdapterDeps, type MediaInput } from "./adapters/index.js";
+import { createAdapter, DeliveryUncertainError, PublishError, type AdapterDeps, type MediaInput } from "./adapters/index.js";
 import type { Renderer } from "./render/png.js";
 import type { Library } from "./library.js";
 import { firstLine } from "./text.js";
@@ -70,7 +70,15 @@ async function mediaFor(post: Post, opts: PublishOptions, cache: Map<string, Med
   return media;
 }
 
+/** Adapters prefix errors with the channel name; the log line already shows it. */
+function withoutChannel(message: string, channel: string): string {
+  return message.startsWith(`${channel}: `) ? message.slice(channel.length + 2) : message;
+}
+
 export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opts: PublishOptions): Promise<Outcome[]> {
+  // The run's clock: starts at opts.now (which --now and tests set) and moves with real time.
+  const startedAt = Date.now();
+  const clock = (): Date => new Date(opts.now.getTime() + (Date.now() - startedAt));
   const outcomes: Outcome[] = [];
   const broken = new Set(lint(cfg, posts).filter((f) => f.severity === "error").map((f) => f.post.id));
   const media = new Map<string, MediaInput | undefined>();
@@ -92,8 +100,22 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       opts.log(`! ${tag}: last attempt may have gone out; check ${channel}, then run "postline mark ${post.id} ${channel} published" or "postline retry ${post.id} ${channel}"`);
       continue;
     }
+    if (entry?.status === "failed" && entry.retryBefore && opts.now.getTime() >= Date.parse(entry.retryBefore)) {
+      // The last failure was unclear, and the network has forgotten the key that
+      // made retrying safe. Retrying now could post twice.
+      const message = `${entry.error ?? "unclear failure"}; too late to retry safely (after ${entry.retryBefore})`;
+      if (!opts.dryRun) {
+        ledger.set(post.id, channel, { status: "uncertain", error: message }, opts.now);
+        ledger.save();
+      }
+      outcomes.push({ post: post.id, channel, result: "blocked", detail: `may have gone out: ${message}` });
+      opts.log(`! ${tag}: last attempt may have gone out and can no longer be retried safely; check ${channel}, then run "postline mark" or "postline retry"`);
+      continue;
+    }
     if (entry?.status === "failed" && entry.attempts >= cfg.publish.maxAttempts) {
-      outcomes.push({ post: post.id, channel, result: "blocked", detail: `gave up after ${entry.attempts} attempts: ${entry.error}` });
+      const reason = withoutChannel(entry.error ?? "unknown error", channel);
+      outcomes.push({ post: post.id, channel, result: "blocked", detail: `gave up after ${entry.attempts} attempts: ${reason}` });
+      opts.log(`! ${tag}: gave up after ${entry.attempts} attempts (${reason}); fix it, then run "postline retry ${post.id} ${channel}"`);
       continue;
     }
     if (broken.has(post.id)) {
@@ -132,13 +154,16 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
     }
 
     // Render before marking the attempt: a card that fails to render was
-    // certainly not sent, so it shouldn't use up an attempt.
+    // certainly not sent. It still counts towards maxAttempts, so a card that
+    // can never render stops retrying instead of failing on every run.
     let image: MediaInput | undefined;
     try {
       image = await mediaFor(post, opts, media);
     } catch (err) {
-      const message = (err as Error).message;
-      ledger.set(post.id, channel, { status: "failed", error: message }, new Date());
+      const message = withoutChannel((err as Error).message, channel);
+      // A prepared entry already counted this attempt.
+      const attempts = (entry?.attempts ?? 0) + (opts.resumePrepared ? 0 : 1);
+      ledger.set(post.id, channel, { status: "failed", error: message, attempts }, new Date());
       ledger.save();
       outcomes.push({ post: post.id, channel, result: "failed", detail: message });
       opts.log(`x ${tag}: ${message}`);
@@ -149,12 +174,22 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       ledger.set(post.id, channel, { status: "attempting" }, opts.now);
       ledger.save();
     }
+    const pending = ledger.get(post.id, channel)?.retryBefore;
     try {
       const adapter = createAdapter(channel, chCfg, opts.deps);
-      const res = await adapter.publish({ post, channel, text, ...(image === undefined ? {} : { image }) });
+      const res = await adapter.publish({
+        post,
+        channel,
+        text,
+        ...(image === undefined ? {} : { image }),
+        attemptStartedAt: clock(),
+        ...(pending ? { retryBefore: new Date(pending) } : {}),
+        now: clock,
+      });
       ledger.set(post.id, channel, { status: "published", remoteId: res.id, ...(res.url === undefined ? {} : { url: res.url }) }, new Date());
       outcomes.push({ post: post.id, channel, result: "published", detail: res.url ?? res.id });
       opts.log(`+ ${tag}: ${res.url ?? res.id}`);
+      if (res.warning) opts.log(`! ${tag}: ${res.warning}`);
       try {
         opts.library?.recordPublished(post.id, {
           channel,
@@ -166,13 +201,24 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
         opts.log(`! ${tag}: published, but the library note failed: ${(error as Error).message}`);
       }
     } catch (err) {
-      const message = (err as Error).message;
+      const message = withoutChannel((err as Error).message, channel);
       if (err instanceof DeliveryUncertainError) {
         ledger.set(post.id, channel, { status: "uncertain", error: message }, new Date());
         outcomes.push({ post: post.id, channel, result: "uncertain", detail: message });
         opts.log(`? ${tag}: ${message}; check ${channel}, then run "postline mark" or "postline retry"`);
       } else {
-        ledger.set(post.id, channel, { status: "failed", error: message }, new Date());
+        const retryBefore = err instanceof PublishError ? err.retryBefore : undefined;
+        // An earlier unclear send's deadline still binds if it comes first.
+        const binding = retryBefore && pending ? Math.min(retryBefore.getTime(), Date.parse(pending)) : retryBefore?.getTime();
+        if (binding !== undefined && clock().getTime() >= binding) {
+          // Retrying would no longer be safe, so this is as unclear as any other.
+          ledger.set(post.id, channel, { status: "uncertain", error: `${message} (it may have gone out)` }, new Date());
+          outcomes.push({ post: post.id, channel, result: "uncertain", detail: message });
+          opts.log(`? ${tag}: ${message}; it may have gone out. Check ${channel}, then run "postline mark" or "postline retry"`);
+          ledger.save();
+          continue;
+        }
+        ledger.set(post.id, channel, { status: "failed", error: message, ...(retryBefore ? { retryBefore: retryBefore.toISOString() } : {}) }, new Date());
         outcomes.push({ post: post.id, channel, result: "failed", detail: message });
         opts.log(`x ${tag}: ${message}`);
       }

@@ -77,9 +77,11 @@ mastodon:
 Create an application under Preferences > Development with `write:statuses` and
 `write:media`. Store the access token as `MASTODON_ACCESS_TOKEN`.
 
-Every status carries an `Idempotency-Key`, so failed attempts are retried normally.
-Mastodon remembers keys for about an hour; with the default 15 minute schedule and
-`maxAttempts: 3`, every retry falls inside that window.
+Every status carries an `Idempotency-Key`, so a retry can't create a second
+status, even after a timeout or a 5xx. Mastodon remembers keys for about an hour,
+so postline only retries an unclear failure within 50 minutes of the first
+attempt. After that it records the post as `uncertain` and asks you to check,
+rather than risk a duplicate.
 
 ## Webhook
 

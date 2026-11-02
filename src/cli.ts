@@ -44,7 +44,8 @@ Commands
   status [--week DATE]     show a week's slots and what is filled or sent
   brief [--week DATE]      print a writing brief for a week (Markdown)
   lint                     check every post against the rules
-  render [id] [--force]    render cards to out/cards (--html also writes HTML)
+  render [id] [--force]    render cards to out/cards (--html also writes HTML);
+                           drafts are skipped unless named or --drafts
                            and keep a full-quality copy in the library (--no-library skips it)
   export <id> [--scale N] [--format png|jpeg] [--size S] [--out FILE]
                            save one card at any resolution, e.g. --scale 4 for print
@@ -101,7 +102,7 @@ export function parseArgs(argv: string[]): Args {
 
 const BOOL_FLAGS = new Set([
   "force", "dry-run", "catch-up", "prepare-only", "resume-prepared", "html", "help", "version", "no-library", "open",
-  "offline", "notify", "no-render", "fail-on-error", "all",
+  "offline", "notify", "no-render", "fail-on-error", "all", "drafts",
 ]);
 
 function libraryFor(cfg: Config, args: Args): Library | undefined {
@@ -361,7 +362,7 @@ async function main(argv: string[]): Promise<number> {
     const imagesDir = str(args, "images");
     if (imagesDir && !args.flags["no-render"]) {
       const urlTemplate = str(args, "image-url");
-      const renderer = new Renderer(cfg);
+      const renderer = new Renderer(cfg, { warn: (m) => console.error(yellow(m)) });
       try {
         for (const post of changes.posts.slice(0, changes.restyled ? RESTYLE_LIMIT : undefined)) {
           if (!post.card) continue;
@@ -467,7 +468,11 @@ async function main(argv: string[]): Promise<number> {
 
     case "render": {
       const id = rest[0];
-      const targets = posts.filter((p) => p.card && (!id || p.id === id));
+      // A bulk render skips drafts (their cards are placeholders, and the library
+      // keeps every version); name a draft or pass --drafts to render it anyway.
+      const targets = posts.filter((p) => p.card && (id ? p.id === id : p.status !== "draft" || Boolean(args.flags.drafts)));
+      const skippedDrafts = id || args.flags.drafts ? 0 : posts.filter((p) => p.card && p.status === "draft").length;
+      if (skippedDrafts) console.log(dim(`skipping ${skippedDrafts} draft${skippedDrafts === 1 ? "" : "s"}; name one or pass --drafts to render them`));
       if (id && targets.length === 0) {
         console.error(`no post "${id}" with a card`);
         return 1;

@@ -24,7 +24,10 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
   const slots = new Map<string, Post>();
 
   for (const post of posts) {
-    for (const p of post.problems) add(post, "parse", "error", p);
+    // A declared draft never publishes, and `postline plan` creates drafts with
+    // empty fields to fill in, so their problems are reminders, not errors. An
+    // unknown status is also held back as a draft, but stays an error.
+    for (const p of post.problems) add(post, post.declaredDraft ? "draft" : "parse", post.declaredDraft ? "warn" : "error", p);
 
     const dupe = ids.get(post.id);
     if (dupe) add(post, "duplicate-id", "error", `id "${post.id}" is also used by ${dupe.file}`);
@@ -97,7 +100,9 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
       else if (!existsSync(post.image) || !statSync(post.image).isFile()) add(post, "image-missing", "error", `image not found: ${post.image}`);
       const ext = extname(post.image).toLowerCase();
       if (ext !== ".png" && ext !== ".jpg" && ext !== ".jpeg") add(post, "image-format", "error", "image must be PNG or JPEG");
-      if (!post.alt?.trim()) add(post, "image-alt", "warn", "set alt text for the image");
+      if (!post.alt?.trim()) {
+        add(post, "image-alt", cfg.rules.requireAlt ? "error" : "warn", "set alt text for the image (alt:), so screen reader users know what it shows");
+      }
     }
     if (post.card) {
       post.card.headline.forEach((line, i) => {
@@ -123,5 +128,34 @@ export function lint(cfg: Config, posts: Post[]): Finding[] {
     }
   }
 
-  return out;
+  return mergeChannelFindings(out);
+}
+
+/**
+ * "linkedin: 3 hashtags" and "review: 3 hashtags" for the same post become one
+ * finding, "linkedin, review: 3 hashtags", so a shared problem is listed once.
+ */
+function mergeChannelFindings(findings: Finding[]): Finding[] {
+  const merged: Finding[] = [];
+  const groups = new Map<string, { finding: Finding; channels: string[]; rest: string }>();
+  for (const f of findings) {
+    const match = /^([A-Za-z0-9][A-Za-z0-9._-]*): (.+)$/s.exec(f.message);
+    const channel = match?.[1];
+    if (!match || !channel || !f.post.channels.includes(channel)) {
+      merged.push(f);
+      continue;
+    }
+    const rest = match[2]!;
+    const key = `${f.post.file}\u0000${f.post.id}\u0000${f.rule}\u0000${f.severity}\u0000${rest}`;
+    const group = groups.get(key);
+    if (group) {
+      group.channels.push(channel);
+    } else {
+      const entry = { finding: { ...f }, channels: [channel], rest };
+      groups.set(key, entry);
+      merged.push(entry.finding);
+    }
+  }
+  for (const { finding, channels, rest } of groups.values()) finding.message = `${channels.join(", ")}: ${rest}`;
+  return merged;
 }

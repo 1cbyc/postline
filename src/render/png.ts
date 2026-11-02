@@ -35,6 +35,31 @@ export interface ExportOptions {
   out: string;
 }
 
+/** Hosts a card page may load from: the brand font, plus any the config allows. */
+export function allowedRenderHosts(cfg: Config): string[] {
+  const hosts = new Set(cfg.card.allowedHosts);
+  if (cfg.brand.font.url) {
+    const host = new URL(cfg.brand.font.url).hostname.toLowerCase();
+    hosts.add(host);
+    // Google Fonts' stylesheet loads the font files from a second host.
+    if (host === "fonts.googleapis.com") hosts.add("fonts.gstatic.com");
+  }
+  return [...hosts];
+}
+
+export function hostAllowedForRender(url: string, hosts: string[]): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol === "data:" || parsed.protocol === "about:") return true;
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return hosts.some((allowed) => (allowed.startsWith("*.") ? host.endsWith(allowed.slice(1)) : host === allowed));
+}
+
 export function cardFile(cfg: Config, post: Post): string {
   assertSafeFileStem(post.id, "post id");
   return resolveInside(join(cfg.outDir, "cards"), `${post.id}.${cfg.card.format === "jpeg" ? "jpg" : "png"}`);
@@ -72,13 +97,48 @@ export class Renderer {
     return cardHtml(post.card!, this.cfg.brand, this.cfg.root, size, this.cfg.design);
   }
 
-  private async shoot(html: string, size: CardSize, scale: number, format: "png" | "jpeg", quality: number): Promise<Buffer> {
+  private async shoot(
+    html: string,
+    size: CardSize,
+    scale: number,
+    format: "png" | "jpeg",
+    quality: number,
+    label?: string,
+  ): Promise<Buffer> {
     const { width, height } = SIZES[size];
     const browser = await this.page();
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+    // Post text ends up in the page (custom templates may even insert it raw), so
+    // cards render with scripts off and can only reach the font host and any
+    // hosts the config allows. Nothing else leaves the machine.
+    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale, javaScriptEnabled: false });
+    const hosts = allowedRenderHosts(this.cfg);
+    await page.route("**/*", (route) => (hostAllowedForRender(route.request().url(), hosts) ? route.continue() : route.abort("blockedbyclient")));
     try {
       await page.setContent(html, { waitUntil: "networkidle" });
       await page.evaluate(() => document.fonts.ready);
+      if (label) {
+        // Text that doesn't fit is pushed into the margins or off the card, and
+        // nothing else would say so.
+        // Nothing may spill past the page, and content may not eat more than
+        // half of the card's margin (a few pixels into it still looks right).
+        const overflow = await page.evaluate(() => {
+          const spills = (el: Element | null): boolean => el instanceof HTMLElement && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+          if (spills(document.body)) return true;
+          const card = document.querySelector(".card");
+          if (!(card instanceof HTMLElement)) return false;
+          const box = card.getBoundingClientRect();
+          const style = getComputedStyle(card);
+          const bottom = box.bottom - parseFloat(style.paddingBottom) / 2;
+          const right = box.right - parseFloat(style.paddingRight) / 2;
+          return [...card.children].some((child) => {
+            const r = child.getBoundingClientRect();
+            return r.bottom > bottom + 1 || r.right > right + 1;
+          });
+        });
+        if (overflow) {
+          this.options.warn?.(`${label}: the card's content doesn't fit the ${size} card; shorten the text or use a larger card.size`);
+        }
+      }
       return await page.screenshot({ type: format, ...(format === "jpeg" ? { quality } : {}) });
     } finally {
       await page.close();
@@ -144,7 +204,7 @@ export class Renderer {
       return { file, width, height, mime, cached: true, hash, ...(libraryFile ? { libraryFile } : {}) };
     }
 
-    const buf = await this.shoot(html, size, this.cfg.card.scale, this.cfg.card.format, this.cfg.card.quality);
+    const buf = await this.shoot(html, size, this.cfg.card.scale, this.cfg.card.format, this.cfg.card.quality, post.id);
     mkdirSync(join(this.cfg.outDir, "cards"), { recursive: true });
     writeFileSync(file, buf);
     this.cache[post.id] = hash;

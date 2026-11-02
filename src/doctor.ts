@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { ChannelConfig, Config, LinkedInChannelConfig } from "./config.js";
 import type { Post } from "./content.js";
 import { lint } from "./lint.js";
+import { blend, parseColor, ratio, type Rgb } from "./contrast.js";
 import { Ledger } from "./ledger.js";
 import { humanLabel } from "./time.js";
 import { notifyUrl, type Alert } from "./notify.js";
@@ -155,6 +156,50 @@ export async function runDoctor(opts: DoctorOptions): Promise<Check[]> {
     .filter((p) => p.status === "ready" && p.when && p.when.getTime() > now.getTime())
     .sort((a, b) => a.when!.getTime() - b.when!.getTime())[0];
   if (next?.when) checks.push({ level: "info", area: "posts", message: `next post: ${next.id} at ${humanLabel(next.when, cfg.timezone)}` });
+
+  // Brand colours, as the built-in layouts draw them. WCAG AA asks for 4.5:1
+  // for text; the eyebrow, numbers and footer URL are large and bold, so 3:1.
+  const { colors } = cfg.brand;
+  const read = (value: string) => parseColor(value);
+  const bg = read(colors.background);
+  const panel = read(colors.panel);
+  const accent = read(colors.accent);
+  // Base colours only: the faint accent glow in one corner of the built-in
+  // layouts sits where no text is drawn, so it isn't included.
+  type Pair = { name: string; fg: Rgb | undefined; bg: Rgb | undefined; min: number };
+  const pairs: Pair[] = [
+    { name: "text on background", fg: read(colors.text), bg, min: 4.5 },
+    { name: "muted text on background", fg: read(colors.muted), bg, min: 4.5 },
+    { name: "text on panels", fg: read(colors.text), bg: panel, min: 4.5 },
+    { name: "muted text on panels", fg: read(colors.muted), bg: panel, min: 4.5 },
+    { name: "accent on background", fg: accent, bg, min: 3 },
+    // Numbered badges: the accent over 8% accent on the panel.
+    { name: "accent in number badges", fg: accent, bg: accent && panel ? blend(accent, panel, 0.08) : undefined, min: 3 },
+    // Chips: the tone's text over 35% of its fill on the panel.
+    ...(["ok", "warn", "bad"] as const).map((tone): Pair => {
+      const fill = read(colors[tone][0]);
+      return { name: `${tone} chip text`, fg: read(colors[tone][1]), bg: fill && panel ? blend(fill, panel, 0.35) : undefined, min: 4.5 };
+    }),
+  ];
+  const weak: string[] = [];
+  const unverified: string[] = [];
+  for (const pair of pairs) {
+    if (!pair.fg || !pair.bg) {
+      unverified.push(pair.name);
+      continue;
+    }
+    const r = ratio(pair.fg, pair.bg);
+    if (r < pair.min) weak.push(`${pair.name} ${r.toFixed(1)}:1 (needs ${pair.min}:1)`);
+  }
+  const checked = pairs.length - unverified.length;
+  if (weak.length) checks.push({ level: "warn", area: "brand", message: `colours below WCAG AA contrast in the built-in layouts: ${weak.join("; ")}` });
+  else if (checked) checks.push({ level: "ok", area: "brand", message: `${checked} colour pairs meet WCAG AA contrast in the built-in layouts` });
+  if (cfg.design.stylesheet || Object.keys(cfg.design.layouts).length) {
+    checks.push({ level: "info", area: "brand", message: "custom layouts and design.stylesheet can change colours; check those cards by eye" });
+  }
+  if (unverified.length) {
+    checks.push({ level: "info", area: "brand", message: `couldn't check ${unverified.join(", ")}: write those colours as hex or rgb() to have them checked` });
+  }
 
   // Rendering.
   if (posts.some((p) => p.card) && opts.launchChromium) {

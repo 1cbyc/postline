@@ -122,3 +122,24 @@ test("doctor warnings are sent as alerts too", () => {
   const alerts = doctorAlerts([{ level: "warn", area: "linkedin", message: "access token expires in 9 days" }, { level: "info", area: "x", message: "y" }]);
   assert.deepEqual(alerts.map((a) => a.message), ["warning: linkedin: access token expires in 9 days"]);
 });
+
+test("doctor warns when brand colours fail WCAG AA contrast", async () => {
+  const cfg = config({ brand: { name: "T", colors: { background: "#ffffff", text: "#999999" } } });
+  const checks = await runDoctor({ cfg, posts: [], now: NOW, env: {}, version: "0.3.2" });
+  assert.match(find(checks, "brand", /below WCAG AA/)?.message ?? "", /text on background 2\.8:1/);
+});
+
+test("doctor checks chips as drawn and lists colours it can't read", async () => {
+  // A dark chip text that passes on its opaque fill but fails over the 35% blend on a dark panel.
+  const cfg = config({ brand: { name: "T", colors: { background: "#0f1115", panel: "#161a21", text: "#eef1f5", muted: "#98a1ae", accent: "hsl(200 80% 60%)", ok: ["#7fd3a5", "#1d5c3a"] } } });
+  const checks = await runDoctor({ cfg, posts: [], now: NOW, env: {}, version: "0.3.2" });
+  assert.match(find(checks, "brand", /below WCAG AA/)?.message ?? "", /ok chip text/);
+  assert.match(find(checks, "brand", /couldn't check/)?.message ?? "", /accent on background/);
+});
+
+test("a ledger with a malformed retryBefore fails closed", () => {
+  const cfg = config();
+  mkdirSync(cfg.stateDir, { recursive: true });
+  writeFileSync(join(cfg.stateDir, "ledger.json"), JSON.stringify({ version: 1, entries: { "p1::mastodon": { status: "failed", updatedAt: NOW.toISOString(), attempts: 1, retryBefore: "soon" } } }));
+  assert.throws(() => new Ledger(cfg.stateDir), /retryBefore/);
+});

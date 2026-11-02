@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { LockedError, withStateLock } from "../src/lock.js";
@@ -34,4 +34,13 @@ test("a lock held from another machine is respected", async () => {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "publish.lock"), JSON.stringify({ pid: 1, host: `not-${hostname()}`, since: "2026-01-01T00:00:00Z" }));
   await assert.rejects(withStateLock(dir, async () => "ok"), /delete/);
+});
+
+test("a lock that is released while we wait is taken instead of reported", async () => {
+  const dir = join(tmp(), ".postline");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "publish.lock");
+  writeFileSync(file, "");
+  setTimeout(() => rmSync(file, { force: true }), 120);
+  assert.equal(await withStateLock(dir, async () => "mine"), "mine");
 });

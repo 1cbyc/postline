@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.2
+
+Safer rendering, and fewer ways for a post to go wrong.
+
+- Cards render with JavaScript off and can only load `data:` URLs, the font host and hosts listed in `card.allowedHosts`, over HTTPS. Post text inserted unescaped with a triple-stash tag can no longer run scripts or send data anywhere during rendering. `brand.font.url` must now be `https://`
+- A card that can never render now counts towards `maxAttempts` and stops retrying, instead of failing on every run
+- Mastodon: an unclear failure is retried only while Mastodon still remembers the idempotency key (50 minutes from the attempt that had the unclear result). The deadline is kept through later failures and checked again just before sending; after it, the post is recorded as `uncertain`
+- A process that finds the publish lock just created by another waits briefly for its details, and takes the lock if it's released meanwhile, instead of reporting it as unreadable
+- Webhook replies that claim to be JSON but don't parse are logged as a warning instead of silently ignored
+- `rules.requireAlt` makes missing alt text on image posts an error
+- `postline doctor` checks brand colours against WCAG AA contrast as the layouts draw them, and lists colours it can't read
+
+Found by running postline end to end for a real brand (GitHub's changelog, with Primer's published design tokens):
+
+- Drafts made by `postline plan` no longer fail `lint` (their empty fields are warnings), so a PR full of fresh drafts passes the check. A mistyped status is still an error
+- Token CSS variables keep the token's own spelling as well as lowercase, so `var(--fgColor-default)` works for design systems that use capitals, as Primer does
+- `postline render` skips drafts unless you name one or pass `--drafts` (and says how many it skipped), so placeholder cards don't fill the graphics library
+- Two design tokens that would become the same CSS variable are now a config error instead of one silently winning
+- The renderer warns when a card's content doesn't fit: long text that spills off the card or eats more than half of its margin. `render`, `preview` and the PR report all show it
+- A post that has used up `maxAttempts` now says so and how to fix it; before, the run exited with an error and no message
+- The same problem on several channels is reported once, and error messages no longer repeat the channel name
+
 ## 0.3.1
 
 Same code as 0.3.0, republished under the maintainer's public address. 0.3.0 and

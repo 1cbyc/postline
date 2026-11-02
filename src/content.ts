@@ -36,6 +36,8 @@ export interface Post {
   when?: Date;
   channels: string[];
   status: "draft" | "ready";
+  /** True only when the file says status: draft (an unknown status also becomes a draft, as an error). */
+  declaredDraft: boolean;
   topic?: string;
   body: string;
   variants: Record<string, string>;
@@ -234,6 +236,7 @@ export function parsePost(src: string, file: string, cfg: Config): Post {
     ...(when === undefined ? {} : { when }),
     channels,
     status,
+    declaredDraft: data.status === "draft",
     ...(topic === undefined ? {} : { topic }),
     body: body.trim(),
     variants: parseVariants(data.variants, problems),

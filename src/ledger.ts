@@ -16,6 +16,12 @@ export interface Entry {
   remoteId?: string;
   url?: string;
   error?: string;
+  /**
+   * After an unclear send that the network can still deduplicate (Mastodon's
+   * idempotency key), retrying is only safe before this time. Kept through later
+   * failures until the post is published or the entry is reset.
+   */
+  retryBefore?: string;
 }
 
 interface LedgerFile {
@@ -49,8 +55,11 @@ function readLedger(file: string): LedgerFile {
     if (typeof entry.attempts !== "number" || !Number.isInteger(entry.attempts) || entry.attempts < 0) {
       throw new Error(`ledger entry ${key} has invalid attempts`);
     }
-    for (const field of ["remoteId", "url", "error"] as const) {
+    for (const field of ["remoteId", "url", "error", "retryBefore"] as const) {
       if (entry[field] != null && typeof entry[field] !== "string") throw new Error(`ledger entry ${key}.${field} must be a string`);
+    }
+    if (typeof entry.retryBefore === "string" && Number.isNaN(Date.parse(entry.retryBefore))) {
+      throw new Error(`ledger entry ${key} has an invalid retryBefore`);
     }
     entries[key] = {
       status: entry.status as EntryStatus,
@@ -59,6 +68,7 @@ function readLedger(file: string): LedgerFile {
       ...(typeof entry.remoteId === "string" ? { remoteId: entry.remoteId } : {}),
       ...(typeof entry.url === "string" ? { url: entry.url } : {}),
       ...(typeof entry.error === "string" ? { error: entry.error } : {}),
+      ...(typeof entry.retryBefore === "string" ? { retryBefore: entry.retryBefore } : {}),
     };
   }
   return { version: 1, entries };
@@ -110,7 +120,14 @@ export class Ledger {
       updatedAt: now.toISOString(),
     };
     if (patch.status === "attempting") next.attempts = (prev?.attempts ?? 0) + 1;
-    if (patch.status === "published") delete next.error;
+    if (patch.status === "published") {
+      delete next.error;
+      delete next.retryBefore;
+    }
+    // Two unclear sends: the earlier deadline is the one that still binds.
+    if (patch.retryBefore && prev?.retryBefore && Date.parse(prev.retryBefore) < Date.parse(patch.retryBefore)) {
+      next.retryBefore = prev.retryBefore;
+    }
     this.data.entries[k] = next;
     return next;
   }

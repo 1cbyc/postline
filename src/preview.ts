@@ -331,7 +331,7 @@ export async function startPreview(opts: PreviewOptions): Promise<PreviewServer>
       const signature = designSignature(cfg);
       if (!renderer || renderer.signature !== signature) {
         await renderer?.instance.close();
-        renderer = { signature, instance: new Renderer(cfg) };
+        renderer = { signature, instance: new Renderer(cfg, { warn: opts.log }) };
       }
       return (await renderer.instance.render(post)).file;
     });
