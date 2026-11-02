@@ -14,5 +14,8 @@
   },
   "routes": [{ "pattern": "postline.nsisong.com", "custom_domain": true }],
   "workers_dev": false,
-  "preview_urls": false
+  "preview_urls": false,
+  // Pull request builds run `wrangler preview` (Cloudflare Previews), which needs
+  // this block. It can stay empty: assets and settings above apply to previews too.
+  "previews": {}
 }
