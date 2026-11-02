@@ -146,7 +146,7 @@ function mergeChannelFindings(findings: Finding[]): Finding[] {
       continue;
     }
     const rest = match[2]!;
-    const key = `${f.post.id}\u0000${f.rule}\u0000${f.severity}\u0000${rest}`;
+    const key = `${f.post.file}\u0000${f.post.id}\u0000${f.rule}\u0000${f.severity}\u0000${rest}`;
     const group = groups.get(key);
     if (group) {
       group.channels.push(channel);

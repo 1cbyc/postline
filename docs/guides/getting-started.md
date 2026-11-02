@@ -31,8 +31,10 @@ Render the sample to check:
 
 ```sh
 npx playwright-core install chromium
-postline render --html
+postline render welcome --html
 ```
+
+The sample is a draft, and a plain `postline render` skips drafts, so name it.
 
 Open `out/cards/welcome.png`. The `--html` flag also writes `welcome.html`, which
 you can open in a browser while you adjust colours.

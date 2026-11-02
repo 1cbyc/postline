@@ -119,11 +119,22 @@ export class Renderer {
       if (label) {
         // Text that doesn't fit is pushed into the margins or off the card, and
         // nothing else would say so.
-        const overflow = await page.evaluate(() =>
-          [document.body, document.querySelector(".card")].some(
-            (el) => el instanceof HTMLElement && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1),
-          ),
-        );
+        // Nothing may spill past the page, and content may not eat more than
+        // half of the card's margin (a few pixels into it still looks right).
+        const overflow = await page.evaluate(() => {
+          const spills = (el: Element | null): boolean => el instanceof HTMLElement && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+          if (spills(document.body)) return true;
+          const card = document.querySelector(".card");
+          if (!(card instanceof HTMLElement)) return false;
+          const box = card.getBoundingClientRect();
+          const style = getComputedStyle(card);
+          const bottom = box.bottom - parseFloat(style.paddingBottom) / 2;
+          const right = box.right - parseFloat(style.paddingRight) / 2;
+          return [...card.children].some((child) => {
+            const r = child.getBoundingClientRect();
+            return r.bottom > bottom + 1 || r.right > right + 1;
+          });
+        });
         if (overflow) {
           this.options.warn?.(`${label}: the card's content doesn't fit the ${size} card; shorten the text or use a larger card.size`);
         }

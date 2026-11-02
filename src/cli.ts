@@ -362,7 +362,7 @@ async function main(argv: string[]): Promise<number> {
     const imagesDir = str(args, "images");
     if (imagesDir && !args.flags["no-render"]) {
       const urlTemplate = str(args, "image-url");
-      const renderer = new Renderer(cfg);
+      const renderer = new Renderer(cfg, { warn: (m) => console.error(yellow(m)) });
       try {
         for (const post of changes.posts.slice(0, changes.restyled ? RESTYLE_LIMIT : undefined)) {
           if (!post.card) continue;
@@ -471,6 +471,8 @@ async function main(argv: string[]): Promise<number> {
       // A bulk render skips drafts (their cards are placeholders, and the library
       // keeps every version); name a draft or pass --drafts to render it anyway.
       const targets = posts.filter((p) => p.card && (id ? p.id === id : p.status !== "draft" || Boolean(args.flags.drafts)));
+      const skippedDrafts = id || args.flags.drafts ? 0 : posts.filter((p) => p.card && p.status === "draft").length;
+      if (skippedDrafts) console.log(dim(`skipping ${skippedDrafts} draft${skippedDrafts === 1 ? "" : "s"}; name one or pass --drafts to render them`));
       if (id && targets.length === 0) {
         console.error(`no post "${id}" with a card`);
         return 1;

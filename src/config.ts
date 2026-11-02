@@ -4,7 +4,7 @@ import { resolve, join, isAbsolute } from "node:path";
 import YAML from "yaml";
 import { isPathInside } from "./path.js";
 import { isValidTimeZone, WEEKDAYS, type Weekday } from "./time.js";
-import { DesignError, discoverLayouts, loadTokens, resolveAlias, type TokenMap } from "./design.js";
+import { DesignError, discoverLayouts, loadTokens, resolveAlias, tokenCss, type TokenMap } from "./design.js";
 
 export type Tone = "ok" | "warn" | "bad" | "neutral";
 export type CardSize = "square" | "landscape" | "portrait";
@@ -423,6 +423,7 @@ function normalizeDesign(raw: UnknownRecord, root: string): DesignConfig {
       design.tokensFile = projectPath(root, raw.tokens, "design.tokens", "");
       if (!existsSync(design.tokensFile)) throw new ConfigError(`design.tokens not found: ${design.tokensFile}`);
       design.tokens = loadTokens(design.tokensFile);
+      tokenCss(design.tokens); // name clashes fail here, not halfway through a render
     }
     if (raw.stylesheet != null) {
       design.stylesheet = projectPath(root, raw.stylesheet, "design.stylesheet", "");

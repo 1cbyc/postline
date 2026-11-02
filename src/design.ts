@@ -79,16 +79,25 @@ export function loadTokens(file: string): TokenMap {
  * own CSS uses) and lowercased (--fgcolor-default).
  */
 export function tokenCss(tokens: TokenMap): string {
-  const lines: string[] = [];
-  const seen = new Set<string>();
+  const own = new Map<string, { name: string; value: string }>();
   for (const [name, value] of tokens) {
     if (!SAFE_CSS_VALUE.test(value)) continue;
     const prop = name.replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-    for (const spelling of [prop, prop.toLowerCase()]) {
-      if (!spelling || seen.has(spelling)) continue;
-      seen.add(spelling);
-      lines.push(`--${spelling}:${value};`);
+    if (!prop) continue;
+    const other = own.get(prop);
+    if (other && other.value !== value) {
+      throw new DesignError(`design tokens "${other.name}" and "${name}" both become --${prop}; rename one of them`);
     }
+    own.set(prop, { name, value });
+  }
+  // A token's own spelling always wins; the lowercase alias only fills a free name.
+  const lines = [...own].map(([prop, { value }]) => `--${prop}:${value};`);
+  const aliases = new Set<string>();
+  for (const [prop, { value }] of own) {
+    const lower = prop.toLowerCase();
+    if (own.has(lower) || aliases.has(lower)) continue;
+    aliases.add(lower);
+    lines.push(`--${lower}:${value};`);
   }
   return lines.length ? `:root{${lines.join("")}}` : "";
 }

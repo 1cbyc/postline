@@ -175,7 +175,7 @@ ${designHead(design)}
   .grid.n1{grid-template-columns:1fr}
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:1.6rem;padding:${wide ? "2.4rem 2.6rem" : "3.4rem"};display:flex;flex-direction:column;justify-content:flex-start}
   .panel .chip{align-self:flex-start;margin-top:1.6rem}
-  footer{display:flex;justify-content:space-between;align-items:flex-end;gap:4rem;margin-top:2.4rem;color:var(--muted);font-size:2.4rem;line-height:1.35}
+  footer{display:flex;justify-content:space-between;align-items:flex-end;gap:4rem;color:var(--muted);font-size:2.4rem;line-height:1.35}
   footer .url{color:var(--accent);font-weight:700;white-space:nowrap}
 </style>
 ${userStylesheet(design)}

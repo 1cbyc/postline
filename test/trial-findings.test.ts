@@ -72,3 +72,20 @@ test("a post that has used up its attempts says so, instead of exiting silently"
   assert.deepEqual(out.map((o) => o.result), ["blocked"]);
   assert.match(lines[0] ?? "", /gave up after 1 attempts \(HTTP 400\); fix it, then run "postline retry p1 linkedin"/);
 });
+
+test("two tokens that become the same CSS variable are a config error, not a silent pick", () => {
+  assert.throws(() => tokenCss(new Map([["color.brand", "#111111"], ["color-brand", "#222222"]])), /both become --color-brand/);
+  // A token's own spelling beats another token's lowercase alias.
+  const css = tokenCss(new Map([["Accent", "#111111"], ["accent", "#222222"]]));
+  assert.match(css, /--Accent:#111111;/);
+  assert.match(css, /--accent:#222222;/);
+  assert.equal(css.match(/--accent:/g)?.length, 1);
+});
+
+test("findings are only merged within one file, even when two posts share an id", () => {
+  const cfg = config({ channels: { linkedin: { type: "linkedin", organization: "1" }, hook: { type: "webhook", url: "https://hooks.example/x" } }, rules: { maxHashtags: 1 } });
+  const a = post(cfg, "id: same\nat: 2026-11-05 10:00\nchannels: [linkedin]", "#a #b", "/x/a.md");
+  const b = post(cfg, "id: same\nat: 2026-11-06 10:00\nchannels: [hook]", "#a #b", "/x/b.md");
+  const hashtags = lint(cfg, [a, b]).filter((f) => f.rule === "hashtags");
+  assert.deepEqual(hashtags.map((f) => [f.post.file, f.message.split(":")[0]]), [["/x/a.md", "linkedin"], ["/x/b.md", "hook"]]);
+});
