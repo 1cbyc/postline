@@ -70,6 +70,11 @@ async function mediaFor(post: Post, opts: PublishOptions, cache: Map<string, Med
   return media;
 }
 
+/** Adapters prefix errors with the channel name; the log line already shows it. */
+function withoutChannel(message: string, channel: string): string {
+  return message.startsWith(`${channel}: `) ? message.slice(channel.length + 2) : message;
+}
+
 export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opts: PublishOptions): Promise<Outcome[]> {
   // The run's clock: starts at opts.now (which --now and tests set) and moves with real time.
   const startedAt = Date.now();
@@ -108,7 +113,9 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
       continue;
     }
     if (entry?.status === "failed" && entry.attempts >= cfg.publish.maxAttempts) {
-      outcomes.push({ post: post.id, channel, result: "blocked", detail: `gave up after ${entry.attempts} attempts: ${entry.error}` });
+      const reason = withoutChannel(entry.error ?? "unknown error", channel);
+      outcomes.push({ post: post.id, channel, result: "blocked", detail: `gave up after ${entry.attempts} attempts: ${reason}` });
+      opts.log(`! ${tag}: gave up after ${entry.attempts} attempts (${reason}); fix it, then run "postline retry ${post.id} ${channel}"`);
       continue;
     }
     if (broken.has(post.id)) {
@@ -153,7 +160,7 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
     try {
       image = await mediaFor(post, opts, media);
     } catch (err) {
-      const message = (err as Error).message;
+      const message = withoutChannel((err as Error).message, channel);
       // A prepared entry already counted this attempt.
       const attempts = (entry?.attempts ?? 0) + (opts.resumePrepared ? 0 : 1);
       ledger.set(post.id, channel, { status: "failed", error: message, attempts }, new Date());
@@ -194,7 +201,7 @@ export async function publishDue(cfg: Config, posts: Post[], ledger: Ledger, opt
         opts.log(`! ${tag}: published, but the library note failed: ${(error as Error).message}`);
       }
     } catch (err) {
-      const message = (err as Error).message;
+      const message = withoutChannel((err as Error).message, channel);
       if (err instanceof DeliveryUncertainError) {
         ledger.set(post.id, channel, { status: "uncertain", error: message }, new Date());
         outcomes.push({ post: post.id, channel, result: "uncertain", detail: message });

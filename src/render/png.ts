@@ -97,7 +97,14 @@ export class Renderer {
     return cardHtml(post.card!, this.cfg.brand, this.cfg.root, size, this.cfg.design);
   }
 
-  private async shoot(html: string, size: CardSize, scale: number, format: "png" | "jpeg", quality: number): Promise<Buffer> {
+  private async shoot(
+    html: string,
+    size: CardSize,
+    scale: number,
+    format: "png" | "jpeg",
+    quality: number,
+    label?: string,
+  ): Promise<Buffer> {
     const { width, height } = SIZES[size];
     const browser = await this.page();
     // Post text ends up in the page (custom templates may even insert it raw), so
@@ -109,6 +116,18 @@ export class Renderer {
     try {
       await page.setContent(html, { waitUntil: "networkidle" });
       await page.evaluate(() => document.fonts.ready);
+      if (label) {
+        // Text that doesn't fit is pushed into the margins or off the card, and
+        // nothing else would say so.
+        const overflow = await page.evaluate(() =>
+          [document.body, document.querySelector(".card")].some(
+            (el) => el instanceof HTMLElement && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1),
+          ),
+        );
+        if (overflow) {
+          this.options.warn?.(`${label}: the card's content doesn't fit the ${size} card; shorten the text or use a larger card.size`);
+        }
+      }
       return await page.screenshot({ type: format, ...(format === "jpeg" ? { quality } : {}) });
     } finally {
       await page.close();
@@ -174,7 +193,7 @@ export class Renderer {
       return { file, width, height, mime, cached: true, hash, ...(libraryFile ? { libraryFile } : {}) };
     }
 
-    const buf = await this.shoot(html, size, this.cfg.card.scale, this.cfg.card.format, this.cfg.card.quality);
+    const buf = await this.shoot(html, size, this.cfg.card.scale, this.cfg.card.format, this.cfg.card.quality, post.id);
     mkdirSync(join(this.cfg.outDir, "cards"), { recursive: true });
     writeFileSync(file, buf);
     this.cache[post.id] = hash;

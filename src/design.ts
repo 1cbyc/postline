@@ -72,13 +72,23 @@ export function loadTokens(file: string): TokenMap {
   return parseTokens(readFileSync(file, "utf8"), file);
 }
 
-/** Tokens as CSS custom properties: color.brand.primary -> --color-brand-primary. */
+/**
+ * Tokens as CSS custom properties: color.brand.primary -> --color-brand-primary.
+ * CSS variables are case-sensitive, so a token spelled with capitals (Primer's
+ * fgColor-default) is available both as written (--fgColor-default, the name its
+ * own CSS uses) and lowercased (--fgcolor-default).
+ */
 export function tokenCss(tokens: TokenMap): string {
   const lines: string[] = [];
+  const seen = new Set<string>();
   for (const [name, value] of tokens) {
     if (!SAFE_CSS_VALUE.test(value)) continue;
-    const prop = name.replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-    if (prop) lines.push(`--${prop}:${value};`);
+    const prop = name.replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+    for (const spelling of [prop, prop.toLowerCase()]) {
+      if (!spelling || seen.has(spelling)) continue;
+      seen.add(spelling);
+      lines.push(`--${spelling}:${value};`);
+    }
   }
   return lines.length ? `:root{${lines.join("")}}` : "";
 }

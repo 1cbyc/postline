@@ -54,6 +54,10 @@ custom. Dots and other separators become dashes:
 | --- | --- |
 | `color.brand.blue` | `var(--color-brand-blue)` |
 | `radius.card` | `var(--radius-card)` |
+| `fgColor-default` (Primer) | `var(--fgColor-default)` or `var(--fgcolor-default)` |
+
+A token with capital letters keeps its own spelling, the way its design system's
+CSS writes it, and is also available in lowercase.
 
 Values that contain anything other than ordinary CSS value characters are left out
 of the CSS, so a token file can't inject rules.

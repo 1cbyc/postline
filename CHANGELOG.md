@@ -12,6 +12,15 @@ Safer rendering, and fewer ways for a post to go wrong.
 - `rules.requireAlt` makes missing alt text on image posts an error
 - `postline doctor` checks brand colours against WCAG AA contrast as the layouts draw them, and lists colours it can't read
 
+Found by running postline end to end for a real brand (GitHub's changelog, with Primer's published design tokens):
+
+- Drafts made by `postline plan` no longer fail `lint` (their empty fields are warnings), so a PR full of fresh drafts passes the check. A mistyped status is still an error
+- Token CSS variables keep the token's own spelling as well as lowercase, so `var(--fgColor-default)` works for design systems that use capitals, as Primer does
+- `postline render` skips drafts unless you name one or pass `--drafts`, so placeholder cards don't fill the graphics library
+- The renderer warns when a card's content doesn't fit (long text pushing into the margins), and the footer always keeps its spacing
+- A post that has used up `maxAttempts` now says so and how to fix it; before, the run exited with an error and no message
+- The same problem on several channels is reported once, and error messages no longer repeat the channel name
+
 ## 0.3.1
 
 Same code as 0.3.0, republished under the maintainer's public address. 0.3.0 and

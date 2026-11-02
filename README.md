@@ -164,7 +164,7 @@ layout and brand adjustments easier to inspect in a browser before publishing.
 | `postline brief [--week DATE]` | Print a Markdown writing brief: open slots, rules, recent topics |
 | `postline lint` | Check every post; exits non-zero on errors |
 | `postline preview [--open]` | Local page showing each post the way each network will display it; reloads on save |
-| `postline render [id] [--force] [--html] [--no-library]` | Render cards to `out/cards/` and keep full-quality copies in the library |
+| `postline render [id] [--force] [--html] [--no-library] [--drafts]` | Render cards to `out/cards/` and keep full-quality copies in the library; drafts only when named or with `--drafts` |
 | `postline export <id> [--scale N] [--size S] [--format F] [--out FILE]` | Save one card at any resolution, size or format |
 | `postline library [--open]` | Show the graphics library folder; `--open` opens the gallery |
 | `postline layouts` | List built-in and custom layouts, tokens and stylesheet in use |
